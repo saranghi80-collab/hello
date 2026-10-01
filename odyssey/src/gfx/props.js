@@ -170,7 +170,7 @@ export function createFlag() {
   B.add(g, G.cyl(0.07, 0.07, 3.6, 10), mat('#d8d8e0', { roughness: 0.3, metalness: 0.7 }), { p: [0, 1.8, 0] });
   B.add(g, G.sphere(0.16, 12, 10), mat('#ffd23a', { roughness: 0.3, metalness: 0.6 }), { p: [0, 3.65, 0] });
   B.add(g, G.cyl(0.45, 0.55, 0.25, 16), mat('#6f6f80', { roughness: 0.6 }), { p: [0, 0.12, 0] });
-  B.build();
+  B.build({ merge: true });
   const cloth = new THREE.PlaneGeometry(1.4, 1.0, 10, 4);
   cloth.translate(0.72, 0, 0);
   const flagMat = new THREE.MeshStandardMaterial({ map: flagTexture(false), side: THREE.DoubleSide, roughness: 0.8 });
@@ -201,7 +201,7 @@ export function createPipe(h = 2, color = '#2fb84a') {
   B.add(g, G.cyl(0.92, 0.92, 0.02, 24), dark, { p: [0, h + 0.005, 0] });
   // highlight stripe
   B.add(g, G.box(0.12, h - 0.7, 0.05), mat('#9cf0a8', { roughness: 0.3 }), { p: [-0.55, (h - 0.6) / 2, 0.76], r: [0, -0.6, 0] });
-  B.build();
+  B.build({ merge: true });
   return g;
 }
 
@@ -213,7 +213,7 @@ export function createSpring() {
   B.add(g, G.cyl(0.85, 0.9, 0.2, 20), mat('#e0202a', { roughness: 0.4 }), { p: [0, 0.1, 0] });
   for (let i = 0; i < 4; i++) B.add(coil, G.torus(0.55, 0.07, 8, 20), mat('#cfd3dc', { roughness: 0.25, metalness: 0.9 }), { p: [0, 0.25 + i * 0.22, 0], r: [Math.PI / 2, 0, 0] });
   B.add(top, G.cyl(0.85, 0.85, 0.22, 20), mat('#ffd23a', { roughness: 0.35 }), { p: [0, 0, 0] });
-  B.build();
+  B.build({ merge: true });
   top.position.y = 1.1;
   g.userData.coil = coil; g.userData.top = top;
   return g;
@@ -255,7 +255,7 @@ export function createOdyssey() {
   // anchor rope
   B.add(g, G.cyl(0.05, 0.05, 2.0, 6), mat('#d8c8a0'), { p: [2.3, 1.2, 3.0] });
   B.add(g, G.torus(0.35, 0.08, 8, 16), mat('#7a7a88', { metalness: 0.8, roughness: 0.3 }), { p: [2.3, 0.2, 3.0] });
-  B.build();
+  B.build({ merge: true });
   // glowing "fuel" globe on deck
   const globe = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 14), new THREE.MeshStandardMaterial({ color: '#ffe680', emissive: '#ffc800', emissiveIntensity: 0.4, roughness: 0.2 }));
   globe.position.set(0, 4.1, -0.6);

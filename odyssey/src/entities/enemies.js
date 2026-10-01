@@ -32,7 +32,7 @@ function goombaModel(color = '#9a5a2c') {
     B.add(body, G.box(0.2, 0.06, 0.06), mat('#2a160a'), { p: [s * 0.14, 0.77, 0.42], r: [0.2, s * -0.2, s * -0.45] });
     B.add(body, G.cone(0.04, 0.09, 6), eyeW(), { p: [s * 0.09, 0.42, 0.29], r: [0, 0, 0] });
   }
-  B.build();
+  B.build({ merge: true });
   g.userData = { feetL, feetR, body };
   return g;
 }
@@ -239,7 +239,7 @@ function frogModel() {
     B.add(g, G.sphere(0.08, 10, 8), green, { p: [s * 0.28, 0.1, 0.42], s: [1, 0.5, 1.3] });
   }
   B.add(g, G.torus(0.22, 0.02, 6, 16, Math.PI), mat('#2a5a22'), { p: [0, 0.5, 0.5], r: [0, 0, Math.PI] });
-  B.build();
+  B.build({ merge: true });
   g.userData.legB = legB;
   return g;
 }
@@ -345,7 +345,7 @@ function billModel() {
     B.add(g, G.box(0.18, 0.05, 0.05), mat('#000'), { p: [s * 0.18, 0.33, 0.6], r: [0, 0, s * -0.4] });
     B.add(g, G.sphere(0.14, 10, 8), eyeW(), { p: [s * 0.52, -0.12, 0.05], s: [0.6, 0.8, 1.1] });
   }
-  B.build();
+  B.build({ merge: true });
   return g;
 }
 
@@ -487,7 +487,7 @@ export class Cannon extends Entity {
     B.add(g, G.box(1.84, 0.2, 1.84), gray, { p: [0, 1.5, 0] });
     // skull emblem
     B.add(g, G.sphere(0.28, 12, 10), mat('#f2f2f2'), { p: [0, 0.85, 0.9], s: [1, 1, 0.3] });
-    B.build();
+    B.build({ merge: true });
     g.rotation.y = yaw;
     this.obj.add(g);
     this.radius = 0; this.height = 0;
@@ -528,7 +528,7 @@ function chompModel() {
     B.add(g, G.cone(0.1, 0.22, 6), eyeW(), { p: [Math.sin(a) * 0.68, 1.02, 0.64 + Math.cos(a) * 0.4], r: [Math.PI, 0, 0] });
     B.add(g, G.cone(0.09, 0.2, 6), eyeW(), { p: [Math.sin(a) * 0.66, 0.63, 0.64 + Math.cos(a) * 0.38] });
   }
-  B.build();
+  B.build({ merge: true });
   return g;
 }
 
@@ -546,7 +546,7 @@ export class ChainChomp extends Creature {
     const B = new ModelBuilder();
     B.add(postG, G.cyl(0.28, 0.32, 1.3, 10), mat('#8a5a2b', { roughness: 0.85 }), { p: [0, 0.65, 0] });
     B.add(postG, G.torus(0.3, 0.07, 8, 16), mat('#8a8a99', { metalness: 0.8, roughness: 0.3 }), { p: [0, 1.25, 0], r: [Math.PI / 2, 0, 0] });
-    B.build();
+    B.build({ merge: true });
     postG.position.copy(this.post);
     level.root.add(postG);
     this.postObj = postG;
@@ -707,7 +707,7 @@ export class Podoboo extends Creature {
     B.add(g, G.sphere(0.5, 20, 14), mat('#ff7a1a', { emissive: '#ff5500', emissiveIntensity: 1.4, roughness: 0.4 }), { p: [0, 0.5, 0] });
     B.add(g, G.sphere(0.36, 16, 12), mat('#ffe066', { emissive: '#ffcc33', emissiveIntensity: 1.6 }), { p: [0, 0.5, 0.18] });
     for (const s of [1, -1]) B.add(g, G.sphere(0.07, 8, 6), mat('#2a0a00'), { p: [s * 0.15, 0.62, 0.48], s: [0.8, 1.4, 0.5] });
-    B.build();
+    B.build({ merge: true });
     this.mesh = g;
     this.model.add(g);
     this.glow = glowSprite('#ff8a20', 2.4, 0.5);
@@ -801,7 +801,7 @@ export class Thwomp extends Entity {
     }
     B.add(g, G.box(1.3, 0.25, 0.1), mat('#3a3f4c'), { p: [0, 0.85, this.d / 2 + 0.05] });
     for (let i = 0; i < 5; i++) B.add(g, G.cone(0.08, 0.16, 4), eyeW(), { p: [-0.5 + i * 0.25, 0.92, this.d / 2 + 0.08] });
-    B.build();
+    B.build({ merge: true });
     g.rotation.y = opts.rot || 0;
     this.obj.add(g);
     this.radius = 1.5; this.height = this.h;
@@ -905,7 +905,7 @@ export class Piranha extends Entity {
     const B = new ModelBuilder();
     B.add(g, G.cyl(0.75, 0.6, 0.9, 18), mat('#3a8f3a', { roughness: 0.5 }), { p: [0, 0.45, 0] });
     B.add(g, G.cyl(0.82, 0.82, 0.18, 18), mat('#2f7a30'), { p: [0, 0.92, 0] });
-    B.build();
+    B.build({ merge: true });
     this.obj.add(g);
     this.stem = new THREE.Group();
     this.stem.position.y = 0.9;
@@ -915,7 +915,7 @@ export class Piranha extends Entity {
     const red = mat('#d8202a', { roughness: 0.45 });
     H.add(this.stem, G.cyl(0.1, 0.13, 1.3, 8), mat('#2f9a35'), { p: [0, 0.65, 0] });
     for (const s of [1, -1]) H.add(this.stem, G.sphere(0.3, 10, 8), mat('#3fb045'), { p: [s * 0.35, 0.3, 0], s: [1.2, 0.3, 0.6], r: [0, 0, s * 0.3] });
-    H.build();
+    H.build({ merge: true });
     this.head = head;
     head.position.y = 1.5;
     this.stem.add(head);
@@ -930,7 +930,7 @@ export class Piranha extends Entity {
       const a = (i / 6) * Math.PI * 2;
       HB.add(top, G.sphere(0.1, 8, 6), eyeW(), { p: [Math.cos(a) * 0.45, 0.38, Math.sin(a) * 0.45], s: [1, 0.4, 1] });
     }
-    HB.build();
+    HB.build({ merge: true });
     top.rotation.x = -0.2; bot.rotation.x = 0.2;
     this.jawTop = top; this.jawBot = bot;
     head.rotation.x = Math.PI / 2;

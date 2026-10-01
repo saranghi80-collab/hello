@@ -210,6 +210,16 @@ export class UI {
     if (cb) setTimeout(cb, 420);
   }
 
+  showLoading(text) {
+    if (!this.loadingEl) {
+      this.loadingEl = h('div', 'loading');
+      this.root.appendChild(this.loadingEl);
+    }
+    this.loadingEl.innerHTML = `<div class="ld-moon">${MOON_SVG('#ffd43b', 56)}</div><div class="ld-text">${text}<span class="dots"><i>.</i><i>.</i><i>.</i></span></div>`;
+    this.loadingEl.hidden = false;
+  }
+  hideLoading() { if (this.loadingEl) this.loadingEl.hidden = true; }
+
   // ------------------------------------------------------------------ dialog
   dialog(lines, onDone) {
     const arr = (Array.isArray(lines) ? lines : [lines]).map((l) => (typeof l === 'string' ? { text: l } : l));

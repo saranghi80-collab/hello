@@ -227,13 +227,27 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ flow
-  start() {
-    this.ui.showTitle();
-    this.state = 'title';
+  async start() {
+    this.ui.showLoading('Loading');
+    this.state = 'loading';
     const id = this.save.data.current && KINGDOMS[this.save.data.current] ? this.save.data.current : 'meadow';
     this.loadKingdom(id);
     this.titleYaw = 0;
     requestAnimationFrame((t) => this.frame(t));
+    await this.precompile();
+    this.ui.hideLoading();
+    this.ui.showTitle();
+    this.state = 'title';
+  }
+
+  // Compile shaders without blocking the main thread where the browser supports it.
+  async precompile() {
+    try {
+      const s = this.level?.def.titleCam || { x: 0, y: 30, z: 0, r: 60 };
+      this.camera.position.set(s.x, s.y, s.z + s.r);
+      this.camera.lookAt(s.x, s.y - 10, s.z);
+      if (this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera);
+    } catch (e) { /* fall back to compiling on first draw */ }
   }
 
   beginPlay() {
@@ -280,14 +294,24 @@ export class Game {
     this.ui.closeMenus();
     this.state = 'loading';
     this.audio.play('whoosh');
-    this.ui.fade(true, () => {
+    this.ui.fade(true, async () => {
+      this.ui.showLoading(`Sailing to the ${KINGDOMS[id].name}`);
+      await new Promise((r) => setTimeout(r, 30));
       this.loadKingdom(id);
+      const p = this.player;
+      this.cam.snap(p.pos.x, p.pos.y, p.pos.z, p.facing);
+      await this.precompileAt();
+      this.ui.hideLoading();
       this.state = 'play';
       this.ui.fade(false);
       this.ui.kingdomBanner(this.level.def);
       this.input.flush();
       this.lockPointer();
     });
+  }
+
+  async precompileAt() {
+    try { if (this.renderer.compileAsync) await this.renderer.compileAsync(this.scene, this.camera); } catch (e) { /* ignore */ }
   }
 
   kingdomReady(id) {
@@ -708,6 +732,7 @@ export class Game {
         this.ui.updateMenu(dt);
         break;
       case 'loading':
+        this.ui.update(dt);
         break;
     }
     this.fx.update(dt);

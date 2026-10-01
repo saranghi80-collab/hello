@@ -70,7 +70,7 @@ export class NPC extends Entity {
     } else if (hat === 'bow') {
       for (const sx of [1, -1]) B.add(bodyG, G.sphere(0.16, 10, 8), accent, { p: [sx * 0.18, 1.25, 0.1], s: [1.2, 0.8, 0.5] });
     }
-    B.build();
+    B.build({ merge: true });
     g.scale.setScalar(s);
     this.model = g;
     this.bodyG = bodyG;
@@ -313,7 +313,7 @@ export class Snowman extends Entity {
     B.add(g, G.cyl(0.45, 0.45, 0.12, 16), mat('#d83a3a'), { p: [0, 3.0, 0] });
     B.add(g, G.cyl(0.42, 0.5, 0.6, 16), mat('#2a2a38'), { p: [0, 4.1, 0] });
     B.add(g, G.cyl(0.65, 0.65, 0.06, 16), mat('#2a2a38'), { p: [0, 3.82, 0] });
-    B.build();
+    B.build({ merge: true });
     this.obj.add(g);
     this.nose = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.6, 10), mat('#ff8a1e'));
     this.nose.rotation.x = Math.PI / 2;
@@ -355,7 +355,7 @@ function penguinModel(scarf = '#e0402a') {
   }
   B.add(body, G.cone(0.1, 0.3, 8), orange, { p: [0, 1.18, 0.55], r: [Math.PI / 2, 0, 0] });
   B.add(body, G.torus(0.42, 0.1, 8, 16), mat(scarf), { p: [0, 1.08, 0], r: [Math.PI / 2, 0, 0] });
-  B.build();
+  B.build({ merge: true });
   g.userData.body = body;
   return g;
 }

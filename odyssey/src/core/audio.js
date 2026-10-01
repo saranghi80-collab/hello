@@ -7,11 +7,11 @@ export class Audio {
     this.last = {};
   }
 
-  init() {
+  init(customCtx = null) {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    const ctx = (this.ctx = new AC());
+    if (!AC && !customCtx) return;
+    const ctx = (this.ctx = customCtx || new AC());
     this.master = ctx.createGain();
     this.comp = ctx.createDynamicsCompressor();
     this.comp.threshold.value = -14; this.comp.ratio.value = 4;

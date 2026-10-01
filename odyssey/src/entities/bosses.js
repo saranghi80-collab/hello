@@ -50,7 +50,7 @@ function kingModel() {
   }
   // royal cape
   B.add(body, new THREE.CylinderGeometry(1.0, 1.5, 1.4, 20, 1, true, Math.PI * 0.6, Math.PI * 0.8), mat('#b0182a', { roughness: 0.7, side: THREE.DoubleSide }), { p: [0, 1.0, -0.1] });
-  B.build();
+  B.build({ merge: true });
   // helmet (separate so it can fly off)
   const helmet = new THREE.Group();
   const H = new ModelBuilder();
@@ -62,7 +62,7 @@ function kingModel() {
     H.add(helmet, G.cone(0.22, 0.7, 8), mat('#d8dde8', { metalness: 0.9, roughness: 0.25 }), { p: [Math.cos(a) * 0.9, 0.9, Math.sin(a) * 0.9], r: [Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4] });
   }
   H.add(helmet, G.cone(0.3, 0.9, 8), mat('#d8dde8', { metalness: 0.9, roughness: 0.25 }), { p: [0, 1.3, 0] });
-  H.build();
+  H.build({ merge: true });
   helmet.position.y = 2.3;
   body.add(helmet);
   g.userData = { body, feetL, feetR, helmet };
@@ -277,7 +277,7 @@ export class Goombette extends Entity {
       B.add(g, G.sphere(0.06, 8, 6), mat('#ff8fb0'), { p: [s * 0.27, 0.48, 0.38], s: [1, 0.6, 0.4] });
     }
     B.add(g, G.sphere(0.09, 10, 8), mat('#ff3d8a'), { p: [0, 1.04, 0.14] });
-    B.build();
+    B.build({ merge: true });
     this.obj.add(g);
     this.mesh = g;
     this.radius = 0.6; this.height = 1.1;
@@ -320,7 +320,7 @@ function fistModel() {
   for (let i = 0; i < 4; i++) B.add(g, roundedBox(0.52, 0.7, 0.9, 0.2), dark, { p: [-0.84 + i * 0.56, 1.0, 1.45] });
   B.add(g, roundedBox(0.6, 0.6, 1.0, 0.2), dark, { p: [1.35, 0.6, 0.8], r: [0, 0.5, 0] });
   B.add(g, G.torus(1.25, 0.14, 8, 20), mat('#3fd0c8', { emissive: '#3fd0c8', emissiveIntensity: 0.2 }), { p: [0, 0.4, -0.2], r: [Math.PI / 2, 0, 0] });
-  B.build();
+  B.build({ merge: true });
   return g;
 }
 
@@ -460,7 +460,7 @@ function golemHead() {
     const a = -1.3 + i * 0.32;
     B.add(g, G.cone(0.5, 2.2, 6), mat('#ffcf3a', { metalness: 0.6, roughness: 0.3 }), { p: [Math.sin(a) * 4.6, 4.8, Math.cos(a) * 4.6], r: [Math.cos(a) * 0.4, 0, -Math.sin(a) * 0.4] });
   }
-  B.build();
+  B.build({ merge: true });
   const eyes = new THREE.Group();
   for (const s of [1, -1]) {
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.65, 16, 12), new THREE.MeshStandardMaterial({ color: '#7ff2ff', emissive: '#3fd0e0', emissiveIntensity: 2.2 }));
@@ -650,14 +650,14 @@ function bowserModel() {
     for (let i = 0; i < 3; i++) B.add(l, G.cone(0.12, 0.3, 6), spike, { p: [-0.3 + i * 0.3, -1.15, 1.25], r: [Math.PI / 2, 0, 0] });
   }
   B.add(tail, G.cone(0.6, 2.0, 12), skin, { p: [0, 0, -0.8], r: [-Math.PI / 2 - 0.4, 0, 0] });
-  B.build();
+  B.build({ merge: true });
   // the top hat (knocked off by Cappy)
   const hat = new THREE.Group();
   const H = new ModelBuilder();
   H.add(hat, G.cyl(0.95, 0.95, 0.1, 22), mat('#f6f6fa', { roughness: 0.35 }), {});
   H.add(hat, G.cyl(0.65, 0.68, 1.3, 22), mat('#f6f6fa', { roughness: 0.35 }), { p: [0, 0.68, 0] });
   H.add(hat, G.cyl(0.69, 0.69, 0.3, 22), mat('#8a2fb8', { roughness: 0.45 }), { p: [0, 0.25, 0] });
-  H.build();
+  H.build({ merge: true });
   hat.position.set(0, 1.0, -0.15);
   hat.rotation.x = -0.15;
   head.add(hat);

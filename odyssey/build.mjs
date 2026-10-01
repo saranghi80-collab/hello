@@ -48,7 +48,7 @@ const options = {
   format: 'iife',
   target: ['es2020'],
   write: false,
-  legalComments: 'none',
+  legalComments: 'eof',
   logLevel: 'warning',
   plugins: [{
     name: 'inline-html',

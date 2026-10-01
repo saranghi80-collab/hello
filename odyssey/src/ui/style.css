@@ -192,6 +192,13 @@ body { color: var(--ink); font: 16px/1.45 var(--body); -webkit-user-select: none
 .t-hint { margin: 4px 0 0; font-weight: 700; font-size: 14px; color: var(--muted); paint-order: stroke fill; -webkit-text-stroke: 3px var(--outline); }
 .t-legal { margin: 0 auto; max-width: 70ch; text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.78); paint-order: stroke fill; -webkit-text-stroke: 3px var(--outline); }
 
+.loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; background: radial-gradient(ellipse at 50% 40%, #241d5e, #0b0a1c 70%); z-index: 5; pointer-events: auto; }
+.ld-moon svg { animation: spinY 1.4s linear infinite; filter: drop-shadow(0 0 16px rgba(255, 220, 90, 0.8)); }
+.ld-text { font-family: var(--display); font-size: 24px; letter-spacing: 0.04em; }
+.ld-text .dots i { font-style: normal; animation: blink 1.2s infinite; }
+.ld-text .dots i:nth-child(2) { animation-delay: 0.2s; }
+.ld-text .dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
 .fade { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity 0.4s; pointer-events: none; }
 .fade.on { opacity: 1; }
 
@@ -206,6 +213,12 @@ body { color: var(--ink); font: 16px/1.45 var(--body); -webkit-user-select: none
 .t-interact { right: calc(130px + env(safe-area-inset-right, 0px)); bottom: calc(150px + env(safe-area-inset-bottom, 0px)); width: 56px; height: 56px; background: rgba(40, 200, 120, 0.85); }
 .t-pause { top: calc(84px + env(safe-area-inset-top, 0px)); right: calc(18px + env(safe-area-inset-right, 0px)); width: 46px; height: 46px; background: rgba(14, 12, 40, 0.7); font-size: 14px; }
 
+@media (max-width: 560px) {
+  .hud-tr { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
+  .moon-kingdom small { display: none; }
+  .health svg { width: 54px; height: 54px; }
+  .t-pause { top: calc(150px + env(safe-area-inset-top, 0px)); }
+}
 @media (max-width: 640px) {
   .counter b { font-size: 26px; }
   .moon-total b { font-size: 30px; }

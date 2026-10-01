@@ -50,6 +50,16 @@ export function xform(geo, { p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1], order 
   return g;
 }
 
+const vcMats = new Map();
+function vertexColorMaterial(kind) {
+  if (!vcMats.has(kind)) {
+    vcMats.set(kind, kind === 'gloss'
+      ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.2 })
+      : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.02 }));
+  }
+  return vcMats.get(kind);
+}
+
 export class ModelBuilder {
   constructor() { this.buckets = new Map(); }
   add(group, geo, material, t = {}) {
@@ -59,8 +69,43 @@ export class ModelBuilder {
     b.geos.push(prep(xform(geo, t)));
     return this;
   }
-  build({ castShadow = true, receiveShadow = false } = {}) {
+  // merge: bake each part's material color into vertex colors so a whole group is 1-2 draw calls.
+  build({ castShadow = true, receiveShadow = false, merge = false } = {}) {
     const meshes = [];
+    if (merge) {
+      const groups = new Map();
+      for (const b of this.buckets.values()) {
+        const m = b.material;
+        const special = m.transparent || (m.emissive && m.emissiveIntensity > 0.05 && m.emissive.getHex() !== 0) || m.map || m.side === THREE.DoubleSide;
+        if (special) { groups.set(b.group.uuid + b.material.uuid, { group: b.group, material: b.material, geos: b.geos }); continue; }
+        const kind = m.roughness < 0.4 || m.metalness > 0.4 ? 'gloss' : 'matte';
+        const k = b.group.uuid + kind;
+        let g = groups.get(k);
+        if (!g) groups.set(k, (g = { group: b.group, material: vertexColorMaterial(kind), geos: [] }));
+        for (const geo of b.geos) {
+          const n = geo.attributes.position.count;
+          const col = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) { col[i * 3] = m.color.r; col[i * 3 + 1] = m.color.g; col[i * 3 + 2] = m.color.b; }
+          geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          g.geos.push(geo);
+        }
+      }
+      for (const g of groups.values()) {
+        if (g.material.vertexColors) {
+          for (const geo of g.geos) if (!geo.attributes.color) {
+            const n = geo.attributes.position.count;
+            geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+          }
+        } else for (const geo of g.geos) if (geo.attributes.color) geo.deleteAttribute('color');
+        const merged = g.geos.length === 1 ? g.geos[0] : mergeGeometries(g.geos, false);
+        const mesh = new THREE.Mesh(merged, g.material);
+        mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
+        g.group.add(mesh);
+        meshes.push(mesh);
+      }
+      this.buckets.clear();
+      return meshes;
+    }
     for (const b of this.buckets.values()) {
       const merged = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
       const m = new THREE.Mesh(merged, b.material);
