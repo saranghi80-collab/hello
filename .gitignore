@@ -1,0 +1,4 @@
+node_modules/
+odyssey/node_modules/
+odyssey/game.js
+*.log

@@ -1,0 +1,15 @@
+{
+  "name": "moon-odyssey",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A fan-made 3D platformer inspired by Super Mario Odyssey, built with three.js.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "three": "^0.186.1"
+  }
+}
