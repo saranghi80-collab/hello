@@ -218,22 +218,32 @@ export function decor(L) {
       L.world.add(new CylinderCollider(x, z, y - 1, y + 12, 2.3));
     },
     castleWall(x0, z0, x1, z1, h, opts = {}) {
-      const y = opts.y ?? Math.min(gy(x0, z0), gy(x1, z1));
+      const lo = Math.min(gy(x0, z0), gy(x1, z1));
+      const y = opts.y ?? lo;
       const len = Math.hypot(x1 - x0, z1 - z0);
       const rot = Math.atan2(x1 - x0, z1 - z0);
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       const th = opts.thick ?? 3;
-      L.box(cx, y + h, cz, th, h + 4, len, opts.color || '#5a5058', { rot, top: '#6e6470', band: 0.3, round: 0.1 });
+      const color = opts.color || '#5a5058';
+      // reach down past the lowest ground under the wall so its ends never float
+      L.box(cx, y + h, cz, th, Math.max(h + 4, y + h - lo + 3), len, color, { rot, top: '#6e6470', band: 0.3, round: 0.1 });
+      // merlons along both edges keep the middle of the wall top walkable
       const n = Math.floor(len / 2.4);
+      const nx = Math.cos(rot), nz = -Math.sin(rot), mt = th * 0.24;
       for (let i = 0; i < n; i++) {
         if (i % 2) continue;
         const t = (i + 0.5) / n - 0.5;
-        L.box(cx + Math.sin(rot) * t * len, y + h + 1.2, cz + Math.cos(rot) * t * len, th, 1.2, 1.4, opts.color || '#5a5058', { rot, round: 0.05 });
+        for (const side of [-1, 1]) {
+          const off = side * (th / 2 - mt / 2);
+          L.box(cx + Math.sin(rot) * t * len + nx * off, y + h + 1.2, cz + Math.cos(rot) * t * len + nz * off, mt, 1.2, 1.4, color, { rot, round: 0.05 });
+        }
       }
     },
     tower(x, z, r0, h, opts = {}) {
-      const y = opts.y ?? gy(x, z);
-      L.cylinder(x, y - 2, z, r0, h + 2, opts.color || '#5a5058', { seg: 20, top: '#6e6470' });
+      const g0 = gy(x, z);
+      const y = opts.y ?? g0;
+      const y0 = Math.min(g0, y) - 2;
+      L.cylinder(x, y0, z, r0, y + h - y0, opts.color || '#5a5058', { seg: 20, top: '#6e6470' });
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * TAU;
         if (i % 2) L.box(x + Math.cos(a) * (r0 - 0.4), y + h + 1.1, z + Math.sin(a) * (r0 - 0.4), 1.2, 1.1, 1.2, '#5a5058', { rot: -a, round: 0.05 });

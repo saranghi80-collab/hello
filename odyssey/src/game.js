@@ -454,6 +454,24 @@ export class Game {
     return new THREE.Vector3(look.x + best[0] * d, look.y + best[1] * d, look.z + best[2] * d);
   }
 
+  // Moons collected inside 8-bit wall sections: no 3D pose, just the fanfare.
+  collectMoon2D(moon) {
+    if (!moon) return;
+    const L = this.level;
+    const ready0 = this.kingdomReady(L.id);
+    moon.taken = true;
+    moon.collected = true;
+    if (!this.save.hasMoon(L.id, moon.id)) this.save.addMoon(L.id, moon.id);
+    moon.kill();
+    this.audio.play('moonget');
+    this.music.duck(true);
+    this.ui.moonGet(moon.def.name, false);
+    setTimeout(() => { this.ui.hideBanner(); this.music.duck(false); }, 2600);
+    this.ui.updateHud(true);
+    this.nextKingdomUnlocked();
+    if (!ready0 && this.kingdomReady(L.id)) setTimeout(() => this.toast('The Odyssey has enough Power Moons to set sail! Board it to travel.'), 2800);
+  }
+
   startCapture(e) {
     const p = this.player;
     if (p.capture || p.dead || !e.captureStart) return;
@@ -695,7 +713,7 @@ export class Game {
         p.cappy.update(dt);
         L.handleEvents(p);
         // interactions
-        if (!p.capture && !p.dead && (p.body.grounded || p.state === 'swim')) {
+        if (!p.capture && !p.dead && !p.mode2d && (p.body.grounded || p.state === 'swim')) {
           const it = L.nearestInteractable(p.pos);
           if (it) {
             this.ui.prompt((this.input.device === 'gamepad' ? 'RB' : this.ui.isTouch ? 'Tap ✋' : 'E') + '  ' + (it.interactLabel || 'Talk'));
@@ -755,7 +773,7 @@ export class Game {
       foliageUniforms.uPlayer.value.copy(a.pos);
       // blob shadow
       const g = this.level.world.groundBelow(a.pos.x, a.pos.z, a.pos.y + 0.5);
-      if (g && !p.dead && (p.visible || p.capture)) {
+      if (g && !p.dead && !p.mode2d && (p.visible || p.capture)) {
         const h = a.pos.y - g.y;
         const s = clamp(1.1 - h * 0.04, 0.35, 1.1) * (p.capture ? (p.capture.radius ?? 0.5) * 2.2 : 1);
         this.blob.visible = true;

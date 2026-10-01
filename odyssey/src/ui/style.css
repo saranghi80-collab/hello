@@ -58,6 +58,7 @@ body { color: var(--ink); font: 16px/1.45 var(--body); -webkit-user-select: none
 .timer.urgent { color: #ff5a5a; }
 .prompt { position: absolute; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: rgba(14, 12, 40, 0.82); border: 2px solid var(--line); border-radius: 999px; padding: 9px 20px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; }
 .capture-hint { position: absolute; left: calc(18px + env(safe-area-inset-left, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); background: rgba(160, 18, 30, 0.85); border-radius: 12px; padding: 8px 14px; font-weight: 800; font-size: 14px; max-width: 46ch; }
+.capture-hint.top { left: 50%; bottom: auto; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); text-align: center; }
 .capture-hint kbd, .prompt kbd { font: 800 13px var(--body); background: rgba(255, 255, 255, 0.18); border-radius: 6px; padding: 1px 6px; }
 .coin-loss { position: absolute; top: calc(52px + env(safe-area-inset-top, 0px)); left: calc(60px + env(safe-area-inset-left, 0px)); font-family: var(--display); font-size: 26px; color: #ff6b6b; paint-order: stroke fill; -webkit-text-stroke: 4px var(--outline); animation: rise 1.8s ease-out forwards; }
 @keyframes rise { to { transform: translateY(-24px); opacity: 0; } }

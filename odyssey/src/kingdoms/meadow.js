@@ -1,6 +1,6 @@
 // Meadow Kingdom: rolling green island, waterfall plateau with the Old Tower, lake, ruins, floating islands.
 import * as THREE from 'three';
-import { kit } from './kit.js';
+import { kit, tileMap } from './kit.js';
 import { fbm2, smoothstep, lerp, clamp, rng, TAU } from '../core/math.js';
 import { Goomba, Frog, ChainChomp, Piranha } from '../entities/enemies.js';
 import { GoombaKing, Goombette } from '../entities/bosses.js';
@@ -8,6 +8,7 @@ import { NPC, JumpRope } from '../entities/misc.js';
 import { decor } from './decor.js';
 
 const SEA = -1.2;
+const WALL_GROUND = 1.5;
 
 function segDist(px, pz, ax, az, bx, bz) {
   const abx = bx - ax, abz = bz - az;
@@ -54,6 +55,10 @@ export function meadowHeight(x, z) {
   // boss arena flat
   const da = Math.hypot(x - 32, z + 80);
   h = lerp(h, 20.2, smoothstep(22, 17, da) * plateau);
+  // level strip in front of the 8-bit wall so nothing hides its floor
+  const wx = smoothstep(-51, -48, x) * smoothstep(-12, -15, x);
+  const wz = smoothstep(-37.6, -36.6, z) * smoothstep(-21, -27, z);
+  h = lerp(h, WALL_GROUND, wx * wz);
   const pd = pathDist(x, z);
   if (pd < 4 && plateau < 0.5) h = lerp(h, h * 0.85 + 0.2, smoothstep(4, 1, pd));
   return h;
@@ -92,6 +97,7 @@ const MOONS = [
   { id: 'boss', name: "King Goombo's Crown Jewel", multi: true },
   { id: 'chimney', name: 'Wall-Jump Chimney' },
   { id: 'ship', name: 'Hidden Behind the Odyssey' },
+  { id: 'retro', name: 'An 8-Bit Climb' },
   { id: 'collector', name: 'Regional Coin Collector' },
 ];
 
@@ -194,6 +200,28 @@ export default {
     // vertical lift to the plateau (west of the falls)
     K.mover([[-14, K.gy(-14, -33) + 0.4, -33], [-14, 21.5, -33]], 3.6, 3.6, { speed: 3.2, pause: 1.6, color: '#b98b55', top: '#e8c88a' });
     K.line(-14, -36, -14, -46, 4, 1.2, { from: 40 });
+
+    // ================================================== 8-bit wall section below the plateau
+    {
+      const m = tileMap(40, 20);
+      m.fill(0, 15, 0, 1, '#').fill(18, 27, 0, 1, '#').fill(30, 39, 0, 1, '#');
+      m.row(6, 9, 2, '=').row(7, 9, 3, '=');
+      m.row(2, 7, 6, '=');
+      m.put(3, 10, '?').put(4, 10, 'B').put(5, 10, '?').put(6, 10, 'B');
+      m.row(10, 14, 8, '=');
+      m.row(17, 21, 11, '=');
+      m.row(11, 16, 14, '=');
+      m.put(13, 17, 'M');
+      m.row(23, 26, 7, '=').row(24, 25, 4, 'B');
+      m.row(32, 34, 5, '?');
+      m.pipe(37, 2, 3);
+      m.put(36, 2, 'E');
+      m.put(0, 2, 'S');
+      for (const [u, v] of [[3, 7], [5, 7], [11, 9], [13, 9], [18, 12], [20, 12], [12, 15], [15, 15], [21, 3], [23, 3], [25, 8], [31, 3], [33, 3]]) m.put(u, v, 'c');
+      for (const [u, v] of [[12, 2], [22, 2], [19, 12], [33, 2]]) m.put(u, v, 'g');
+      moon('retro', -36.4, -50, -36, { hidden: true }); // lives in the 8-bit section; x/z mark it on the map
+      K.wall2d({ x: -46.5, y: WALL_GROUND - 0.75, z: -36.2, rot: 0, map: m.rows(), theme: 'overworld', moon: M.retro });
+    }
 
     // ================================================== terraces up the east side
     for (let i = 0; i < 9; i++) {
@@ -377,7 +405,7 @@ export default {
     D.windmill(-58, -24);
     D.fenceAlong([[-2, 40], [-14, 32], [-28, 22]], 3.2);
     D.fenceAlong([[8, 30], [14, 16], [28, 6]], 3.2);
-    L.scatterFoliage({ count: 10000, flowers: 420, ok: (x, z, h) => h > SEA + 0.8 && pathDist(x, z) > 2.2 && !(x > 36 && x < 88 && z > -4 && z < 50) && Math.hypot(x - 32, z + 80) > 18, grassColor: (x, z) => (fbm2(x * 0.05, z * 0.05) > 0 ? '#8fdc5e' : '#79c94e') });
+    L.scatterFoliage({ count: 10000, flowers: 420, ok: (x, z, h) => h > SEA + 0.8 && pathDist(x, z) > 2.2 && !(x > 36 && x < 88 && z > -4 && z < 50) && Math.hypot(x - 32, z + 80) > 18 && !(x > -48 && x < -15 && z > -37.5 && z < -30), grassColor: (x, z) => (fbm2(x * 0.05, z * 0.05) > 0 ? '#8fdc5e' : '#79c94e') });
     D.clouds(14, 60, 90, 220);
   },
 };

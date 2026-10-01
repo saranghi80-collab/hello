@@ -49,6 +49,7 @@ export class Player {
     this.lastGroundY = 0;
     this.lastSafe = new THREE.Vector3();
     this.capture = null;
+    this.mode2d = null;
     this.cappy = null;
     this.idleTime = 0;
     this.inputDir = new THREE.Vector3();
@@ -100,6 +101,7 @@ export class Player {
     this.root.visible = true;
     this.anim.flip = null;
     this.gravMul = level.def.gravity ?? 1;
+    this.mode2d = null;
     if (this.cappy) this.cappy.reset();
     this.model.setCapVisible(true);
     this.syncModel(0);
@@ -148,6 +150,11 @@ export class Player {
     this.inputDir.set(wx, 0, wz).normalize();
     this.inputMag = mag;
     if (mag < 0.12) this.inputMag = 0;
+
+    if (this.mode2d) {
+      this.mode2d.update2d(dt, this);
+      return;
+    }
 
     if (this.capture) {
       this.capture.captureUpdate(dt, this);
@@ -808,7 +815,7 @@ export class Player {
   }
 
   hurt(from, opts = {}) {
-    if (this.invuln > 0 || this.dead || this.state === 'cutscene') return;
+    if (this.invuln > 0 || this.dead || this.state === 'cutscene' || this.mode2d) return;
     if (this.capture) { this.capture.captureHurt?.(from); return; }
     this.hp -= opts.damage ?? 1;
     this.game.audio.play('hurt');
@@ -859,6 +866,7 @@ export class Player {
   }
 
   respawn(pos, facing) {
+    if (this.mode2d) this.mode2d.abort(this);
     this.dead = false;
     this.hp = this.maxHp;
     this.body.setPos(pos.x, pos.y, pos.z);
@@ -868,6 +876,7 @@ export class Player {
     this.invuln = 1.0;
     this.capture = null;
     this.root.visible = true;
+    this.visible = true;
     this.cappy?.reset();
     this.model.setCapVisible(true);
     this.anim.flip = null;

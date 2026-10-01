@@ -127,11 +127,14 @@ export class UI {
     this.touch?.setInteract(true);
   }
 
-  captureHint(text) {
+  captureHint(text, opts = {}) {
     const el = this.$('hud-capture');
+    clearTimeout(this.hintTimer);
     if (!text) { el.hidden = true; return; }
     el.innerHTML = text;
     el.hidden = false;
+    el.classList.toggle('top', !!opts.top);
+    if (opts.hideAfter) this.hintTimer = setTimeout(() => { el.hidden = true; }, opts.hideAfter * 1000);
   }
 
   toast(msg) {

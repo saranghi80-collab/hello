@@ -35,14 +35,15 @@ Open [`odyssey/index.html`](odyssey/index.html) in a recent desktop or mobile br
 
 | Kingdom | Highlights | Boss or finale |
 | --- | --- | --- |
-| Meadow Kingdom | Waterfall plateau, Old Tower spiral, frog lake, ancient ruins, jump rope, sky garden course | King Goombo: knock off his helmet with Cappy, then stomp |
+| Meadow Kingdom | Waterfall plateau, Old Tower spiral, frog lake, ancient ruins, jump rope, sky garden course, an 8-bit wall climb | King Goombo: knock off his helmet with Cappy, then stomp |
 | Dune Kingdom | Great Pyramid, upside-down floating pyramid, oasis town, secret chamber, Bullet Bill flights | Sandstone Sentinel: capture its stuck fists and punch its face |
 | Frost Kingdom | Shiverpeak hike, slippery ice, freezing water, snowman fetch quest, ice crystals, ice cave | Penguin race around the mountain |
-| Cinder Keep | Bowser's lava fortress: Thwomp bridge, fire bars, lava-bubble swimming, volcano | Bowser, followed by the ending |
+| Cinder Keep | Bowser's lava fortress: Thwomp bridge, fire bars, lava-bubble swimming, volcano, an 8-bit castle wall | Bowser, followed by the ending |
 | Lunar Kingdom (post-game) | Low gravity, craters, moon spires, a sky course under the home planet | Grand celebration at 60 moons |
 
 - **About 80 Power Moons** (multi moons count as three), plus regional coins, moon shards, hidden blocks, sparkling ground-pound spots, timer challenges and secret pipes.
 - **Captures**: stackable Goomba towers, high-jumping Frogs, flyable Bullet Bills, charging Chain Chomps, lava-swimming Lava Bubbles and the golem's fists.
+- **8-bit wall sections**: walk into a green pipe sticking out of a wall to turn into a flat pixel sprite and run a short side-scrolling stage on the wall itself, with blocks, Goombas, pits and a hidden moon.
 - **The Odyssey** travels between kingdoms once each one is powered with enough moons.
 - **Map** of each kingdom with warps between activated checkpoint flags, plus a moon checklist and an outfit shop.
 - **Original soundtrack** with a separate theme for each kingdom, made by a small Web Audio sequencer.
@@ -62,7 +63,7 @@ The source is plain ES modules in `odyssey/src`:
 - `core/`: input, Web Audio synthesis, music sequencer, save data, math
 - `physics/`: colliders (boxes, ramps, cylinders, domes, heightfields), the spatial hash and the kinematic character body
 - `actors/`: Mario's model, animation, moveset and camera, plus Cappy
-- `entities/`: collectibles, blocks and props, enemies and captures, bosses, NPCs and minigames
+- `entities/`: collectibles, blocks and props, enemies and captures, bosses, NPCs, minigames and the 8-bit wall sections
 - `gfx/`: sky, water and lava, grass, particles, materials and prop meshes
 - `level/` and `kingdoms/`: the level builder and one file per kingdom
 - `ui/`: HUD, menus, map, touch controls and styles

@@ -1,6 +1,6 @@
 // Cinder Keep: Bowser's volcanic stronghold on a lava sea. Final kingdom.
 import * as THREE from 'three';
-import { kit } from './kit.js';
+import { kit, tileMap } from './kit.js';
 import { decor } from './decor.js';
 import { fbm2, smoothstep, rng, TAU } from '../core/math.js';
 import { Goomba, Podoboo, Thwomp, FireBar, Cannon, ChainChomp, Piranha } from '../entities/enemies.js';
@@ -55,6 +55,7 @@ const MOONS = [
   { id: 'sparkle', name: 'Sparkle in the Ashes' },
   { id: 'timer', name: 'Timer Steps: Magma Stairs' },
   { id: 'bowser', name: 'The Grand Moon', multi: true, final: true },
+  { id: 'retro', name: 'Castle Wall in 8-Bit' },
   { id: 'collector', name: 'Regional Coin Collector' },
 ];
 
@@ -137,13 +138,15 @@ export default {
     // ================================================== castle island & gate
     {
       // outer wall with a gate at z = -24
-      D.castleWall(-36, -24, -6, -24, 9);
-      D.castleWall(6, -24, 36, -24, 9);
-      D.castleWall(-36, -24, -36, -86, 9);
-      D.castleWall(36, -24, 36, -86, 9);
+      // the walls stand on the castle floor (3.6), not on the lava shore at their corners
+      const W = { y: 3.6 };
+      D.castleWall(-36, -24, -6, -24, 9, W);
+      D.castleWall(6, -24, 36, -24, 9, W);
+      D.castleWall(-36, -24, -36, -86, 9, W);
+      D.castleWall(36, -24, 36, -86, 9, W);
       L.box(0, 3.6 + 13, -24, 12, 4, 3, STONE, { top: '#6e6470' }); // gate lintel
-      D.tower(-36, -24, 4.2, 14); D.tower(36, -24, 4.2, 14);
-      D.tower(-36, -86, 4.2, 16); D.tower(36, -86, 4.2, 16);
+      D.tower(-36, -24, 4.2, 14, W); D.tower(36, -24, 4.2, 14, W);
+      D.tower(-36, -86, 4.2, 16, W); D.tower(36, -86, 4.2, 16, W);
       for (const x of [-10, 10]) D.banner(x, 3.6 + 12, -22.4, 0, 5);
       moon('gate', 0, K.gy(0, -18) + 1.6, -18);
       K.checkpoint('gate', 'Castle Gate', 8, -16, Math.PI);
@@ -153,6 +156,27 @@ export default {
       moon('rampart', -36, 3.6 + 13.4, -55, { hidden: true });
       K.block(-36, 3.6 + 11.2, -55, 'hidden', 'moon', { moon: M.rampart });
       for (let i = 0; i < 6; i++) L.box(-31 + i * 0.01, 3.6 + 1.5 + i * 1.3, -30 - i * 2.4, 3, 1.4, 2.4, STONE, { top: '#7a7076' });
+    }
+
+    // ================================================== 8-bit section on the west castle wall (inner face)
+    {
+      const m = tileMap(40, 12);
+      m.fill(0, 7, 0, 1, '#').fill(11, 15, 0, 1, '#').fill(19, 24, 0, 1, '#').fill(29, 39, 0, 1, '#');
+      for (const [a, b] of [[8, 10], [16, 18], [25, 28]]) m.row(a, b, 0, 'l').row(a, b, 1, 'L');
+      m.row(9, 9, 4, '=').row(17, 17, 4, '=');
+      m.row(26, 27, 5, '=');
+      m.row(4, 6, 5, '=');
+      m.put(5, 8, 'M');
+      m.row(12, 14, 6, '?');
+      m.row(21, 23, 4, '=').row(22, 22, 7, '=');
+      m.row(31, 32, 2, '^').row(34, 34, 2, '=');
+      m.pipe(37, 2, 3);
+      m.put(36, 2, 'E');
+      m.put(0, 2, 'S');
+      for (const [u, v] of [[9, 5], [17, 5], [26, 6], [27, 6], [13, 3], [22, 8]]) m.put(u, v, 'c');
+      for (const [u, v] of [[13, 2], [21, 2], [33, 3]]) m.put(u, v, 'g');
+      moon('retro', -34, -50, -54, { hidden: true }); // lives in the 8-bit section; x/z mark it on the map
+      K.wall2d({ x: -34.4, y: K.gy(-30, -56) - 0.75, z: -50, rot: Math.PI / 2, map: m.rows(), theme: 'castle', moon: M.retro, wall: false });
     }
 
     // ================================================== courtyard
@@ -173,6 +197,7 @@ export default {
       const steps = [];
       for (let i = 0; i < 6; i++) steps.push(K.ghost(20 + i * 1.6, cy + 2 + i * 2.1, -32 - i * 2.4, 2.6, 0.6, 2.6, '#ff6a3a'));
       L.box(31.5, cy + 15, -48, 4, 1.2, 5, STONE, { top: '#7a7076' });
+      L.box(33.2, cy + 13.8, -48, 2.6, 15, 3.4, STONE, { top: '#7a7076', band: 0.2 }); // buttress under the balcony
       moon('timer', 31.5, cy + 16.4, -48);
       K.timerSwitch(16, -30, { duration: 8, targets: steps, color: '#ff4a2a' });
       // the keep: spiral ramps up to Bowser's arena

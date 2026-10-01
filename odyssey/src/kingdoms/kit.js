@@ -3,6 +3,20 @@ import * as THREE from 'three';
 import { CoinField, Moon, MoonShard, Heart } from '../entities/collectibles.js';
 import { Block, Checkpoint, Spring, Pipe, Sign, OdysseyShip, MovingPlatform, FallingPlatform, TimerSwitch, GhostPlatform, Breakable } from '../entities/props.js';
 import { SparkleSpot } from '../entities/misc.js';
+import { Wall2D, WallPipe } from '../entities/wall2d.js';
+
+// Small tile-map editor for 8-bit wall sections.
+export function tileMap(W, H) {
+  const g = Array.from({ length: H }, () => Array(W).fill(' '));
+  const M = {
+    put(u, v, ch) { if (u >= 0 && u < W && v >= 0 && v < H) g[H - 1 - v][u] = ch; return M; },
+    fill(u0, u1, v0, v1, ch) { for (let u = u0; u <= u1; u++) for (let v = v0; v <= v1; v++) M.put(u, v, ch); return M; },
+    row(u0, u1, v, ch) { return M.fill(u0, u1, v, v, ch); },
+    pipe(u, v0, h) { for (let v = v0; v < v0 + h - 1; v++) { M.put(u, v, 'P'); M.put(u + 1, v, 'p'); } M.put(u, v0 + h - 1, 'Q'); M.put(u + 1, v0 + h - 1, 'K'); return M; },
+    rows() { return g.map((r) => r.join('')); },
+  };
+  return M;
+}
 
 export function kit(L) {
   const cf = L.coinField || (L.coinField = new CoinField(L));
@@ -73,6 +87,20 @@ export function kit(L) {
     ghost(x, yTop, z, w, h, d, color) { return new GhostPlatform(L, x, yTop, z, w, h, d, color); },
     breakable(x, z, opts = {}, y = null) { return new Breakable(L, x, y ?? gy(x, z), z, opts); },
     sparkle(x, z, onPound, y = null) { return new SparkleSpot(L, x, y ?? gy(x, z), z, onPound); },
+    // 8-bit wall section with its entry pipe. Builds the wall too.
+    wall2d(opts) {
+      const T = opts.tile ?? 0.75;
+      const W = opts.map[0].length, H = opts.map.length;
+      const F = new THREE.Vector3(Math.sin(opts.rot), 0, Math.cos(opts.rot));
+      const R = new THREE.Vector3(Math.cos(opts.rot), 0, -Math.sin(opts.rot));
+      // wall slab behind the playfield
+      const cx = opts.x + R.x * (W * T) / 2 - F.x * 0.6, cz = opts.z + R.z * (W * T) / 2 - F.z * 0.6;
+      if (opts.wall !== false) L.box(cx, opts.y + H * T + 0.5, cz, W * T + 1.2, H * T + 3, 1.2, opts.wallColor || '#b9ad97', { rot: opts.rot, top: opts.wallTop || '#c9bfa8', band: 0.2, round: 0.1 });
+      const sec = new Wall2D(L, opts);
+      new WallPipe(L, sec);
+      if (sec.exit) new WallPipe(L, sec, { atExit: true });
+      return sec;
+    },
     v3: (x, y, z) => new THREE.Vector3(x, y, z),
   };
   return K;
