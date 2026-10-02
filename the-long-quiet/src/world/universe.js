@@ -1,0 +1,213 @@
+// Ties the galaxy to the handful of hand-placed places: Sol, the system you wake up in,
+// and the route of beacons Surveyor Ilse Marrow left behind.
+
+import { Galaxy, SOL_POS, distLy } from './galaxy.js';
+import { generateSystem, qAxis } from './system.js';
+import { Rng, hash32 } from '../core/rng.js';
+import { AU, R_EARTH, M_EARTH, R_JUP, M_JUP, G } from '../core/units.js';
+import { hexToLinear } from '../core/color.js';
+import { properName } from './names.js';
+
+const TRAIL_NAMES = ['Wren', 'Halloran', 'Ostrey', 'Calder', 'Mirrin', 'Saelith', 'Tamsin', 'Lowe'];
+export const TRAIL_LENGTH = 8; // beacons after the first; the last one is her ship
+
+export class Universe {
+  constructor() {
+    this.galaxy = new Galaxy();
+    this.special = new Map();
+    this.systemCache = new Map();
+    this.buildStory();
+  }
+
+  buildStory() {
+    const g = this.galaxy;
+    const r = new Rng(hash32(g.seed, 0x5701));
+    // Starting system: an orange or yellow star 7-13 ly from Sol.
+    let cands = g.starsInRadius(SOL_POS, 13)
+      .filter((c) => c.d > 7 && c.star.kind === 'main' && 'KGF'.includes(c.star.cls))
+      .sort((a, b) => a.star.id.localeCompare(b.star.id));
+    let start;
+    if (cands.length) start = cands[0].star;
+    else {
+      const any = g.starsInRadius(SOL_POS, 13).filter((c) => c.d > 6 && c.star.id !== 'SOL').sort((a, b) => b.d - a.d)[0];
+      start = g.forceStar(any.star.id, { classDef: g.classDef('K'), u: 0.4 });
+    }
+    start = g.forceStar(start.id, { classDef: g.classDef(start.cls), u: 0.45, name: 'Vesper' });
+    this.start = start;
+
+    // The trail heads away from Sol, wandering.
+    let dir = norm(sub(start.pos, SOL_POS));
+    dir = norm([dir[0], dir[1] * 0.2, dir[2]]);
+    const trail = [start];
+    let prev = start;
+    for (let i = 0; i < TRAIL_LENGTH; i++) {
+      const step = r.range(18, 27);
+      const yaw = r.range(-0.55, 0.55);
+      dir = norm([dir[0] * Math.cos(yaw) - dir[2] * Math.sin(yaw), dir[1] * 0.5 + r.range(-0.08, 0.08), dir[0] * Math.sin(yaw) + dir[2] * Math.cos(yaw)]);
+      const target = add(prev.pos, scale(dir, step));
+      const near = g.starsInRadius(target, 9)
+        .filter((c) => c.star.kind === 'main' && c.star.cls !== 'O' && c.star.cls !== 'B' && !trail.includes(c.star) && distLy(c.star.pos, prev.pos) > 12)
+        .sort((a, b) => a.d - b.d);
+      let pick = near[0]?.star;
+      if (!pick) {
+        const any = g.starsInRadius(target, 14).filter((c) => !trail.includes(c.star) && c.star.id !== 'SOL').sort((a, b) => a.d - b.d)[0];
+        pick = any.star;
+      }
+      const cls = i === TRAIL_LENGTH - 1 ? 'K' : pick.cls === 'M' || pick.kind !== 'main' ? 'K' : pick.cls;
+      pick = g.forceStar(pick.id, { classDef: g.classDef(cls), u: r.range(0.2, 0.8), name: TRAIL_NAMES[i] });
+      trail.push(pick);
+      prev = pick;
+    }
+    this.trail = trail;
+
+    this.special.set(start.id, {
+      minPlanets: 5,
+      noRandomSignals: true,
+      after: (sys, rr, h) => ensureStartSystem(sys, rr, h),
+    });
+    for (let i = 1; i < trail.length; i++) {
+      const last = i === trail.length - 1;
+      this.special.set(trail[i].id, {
+        minPlanets: 3,
+        noRandomSignals: true,
+        after: (sys, rr, h) => (last ? ensureFinalSystem(sys, rr, h) : addBeacon(sys, rr, h, i)),
+      });
+    }
+    this.special.set('SOL', { build: buildSol, noRandomSignals: true });
+  }
+
+  trailIndex(starId) {
+    return this.trail.findIndex((s) => s.id === starId);
+  }
+
+  system(star) {
+    let sys = this.systemCache.get(star.id);
+    if (!sys) {
+      sys = generateSystem(star, this.special.get(star.id));
+      if (this.systemCache.size > 24) this.systemCache.clear();
+      this.systemCache.set(star.id, sys);
+    }
+    return sys;
+  }
+}
+
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function scale(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+
+function addPlanet(sys, h, rr, body, aAU, name) {
+  body.kind = 'planet';
+  body.parent = -1;
+  body.index = sys.bodies.length;
+  body.name = name;
+  body.orbit = h.makeOrbit(rr, aAU * AU, sys.star.mass, 0.03);
+  body.eqTemp = 278 * Math.pow(Math.max(sys.star.lum, 1e-5), 0.25) / Math.sqrt(aAU);
+  h.spinFor(body, rr, false);
+  sys.bodies.push(body);
+  return body;
+}
+
+function addMoon(sys, h, rr, parent, body, a, name) {
+  body.kind = 'moon';
+  body.parent = parent.index;
+  body.index = sys.bodies.length;
+  body.name = name;
+  body.orbit = h.makeOrbit(rr, a, parent.mass, 0.03);
+  body.eqTemp = parent.eqTemp;
+  body.spin = { locked: true, tilt: [0, 0, 0, 1], period: body.orbit.period, phase0: 0 };
+  sys.bodies.push(body);
+  return body;
+}
+
+function pickBeaconHost(sys, rr) {
+  const pref = sys.bodies.filter((b) => b.rings) // ringed giants make for a better view
+    .concat(sys.bodies.filter((b) => b.kind === 'moon' && b.parent >= 0 && sys.bodies[b.parent].rings))
+    .concat(sys.bodies.filter((b) => b.type === 'gas' || b.type === 'icegiant'))
+    .concat(sys.bodies);
+  return pref[0];
+}
+
+function addBeacon(sys, rr, h, n) {
+  if (!sys.bodies.length) {
+    const T = 200;
+    addPlanet(sys, h, rr, h.makeSolid(sys, rr, 'barren', R_EARTH * 0.4, M_EARTH * 0.06, T), 1.2 * Math.sqrt(sys.star.lum), `${sys.starData.name} b`);
+  }
+  const host = pickBeaconHost(sys, rr);
+  const sig = h.orbitSignal('beacon', host, rr, host.rings ? 1.0 : rr.range(1.25, 1.6));
+  sig.trail = n;
+  sys.signals.push(sig);
+}
+
+function ensureStartSystem(sys, rr, h) {
+  // Make sure the first system has a ringed gas giant with a landable moon, which is
+  // where the first beacon waits.
+  let giant = sys.bodies.find((b) => b.type === 'gas' && b.parent < 0);
+  if (!giant) {
+    const L = Math.max(sys.star.lum, 1e-3);
+    const aAU = 5.2 * Math.sqrt(L) * 1.1;
+    giant = addPlanet(sys, h, rr, h.makeGas(rr, false, R_JUP * 0.92, M_JUP * 0.8, 278 * Math.pow(L, 0.25) / Math.sqrt(aAU)), aAU, `${sys.starData.name} ${'bcdefghij'[sys.bodies.filter((b) => b.parent < 0).length]}`);
+  }
+  if (!giant.rings) {
+    giant.rings = { inner: giant.radius * 1.3, outer: giant.radius * 2.25, seed: rr.int(1, 1e9), color: hexToLinear('#d4c6ad'), opacity: 0.85 };
+  }
+  // remove moons inside the rings
+  for (const m of sys.bodies) if (m.parent === giant.index && m.orbit.a < giant.rings.outer * 1.2) m.orbit.a = giant.rings.outer * 1.3 + m.radius * 4;
+  let moon = sys.bodies.find((b) => b.parent === giant.index && b.solid);
+  if (!moon) {
+    moon = addMoon(sys, h, rr, giant, h.makeSolid(sys, rr, 'ice', 1.3e6, 0.011 * M_EARTH, giant.eqTemp), giant.radius * 4.2, `${giant.name} I`);
+  }
+  sys.signals.push({ ...h.orbitSignal('beacon', giant, rr, 1.0), trail: 0 });
+  sys.signals[sys.signals.length - 1].orbit.a = giant.rings.outer * 1.12;
+}
+
+function ensureFinalSystem(sys, rr, h) {
+  const L = Math.max(sys.star.lum, 1e-3);
+  const aAU = 3.4 * Math.sqrt(L);
+  const T = 278 * Math.pow(L, 0.25) / Math.sqrt(aAU);
+  const giant = addPlanet(sys, h, rr, h.makeGas(rr, false, R_JUP * 1.02, M_JUP * 1.4, T), aAU, `${sys.starData.name} ${'bcdefghij'[sys.bodies.filter((b) => b.parent < 0).length]}`);
+  giant.rings = { inner: giant.radius * 1.35, outer: giant.radius * 2.4, seed: rr.int(1, 1e9), color: hexToLinear('#d8ccb6'), opacity: 0.9 };
+  giant.spin.tilt = qAxis(1, 0, 0, 0.42);
+  const moon = addMoon(sys, h, rr, giant, h.makeSolid(sys, rr, 'barren', 1.05e6, 0.0075 * M_EARTH, T), giant.radius * 5.5, `${giant.name} I`);
+  moon.terrain.mare = 0.3;
+  moon.restingPlace = true;
+  const sig = h.surfaceSignal('petrel', moon, rr, 0.22, -0.18); // near-side, so the giant hangs in her sky
+  sig.trail = TRAIL_LENGTH;
+  sys.signals.push(sig);
+}
+
+function buildSol(sys, rr, h) {
+  const mk = (type, rE, mE, aAU, name, extra = {}) => {
+    const T = 278 / Math.sqrt(aAU);
+    const b = h.makeSolid(sys, rr, type, rE * R_EARTH, mE * M_EARTH, T, extra);
+    return addPlanet(sys, h, rr, b, aAU, name);
+  };
+  const gas = (ice, rJ, mJ, aAU, name, palette) => {
+    const T = 278 / Math.sqrt(aAU);
+    const b = h.makeGas(rr, ice, rJ * R_JUP, mJ * M_JUP, T);
+    if (palette) b.gas.palette = palette.map(hexToLinear);
+    return addPlanet(sys, h, rr, b, aAU, name);
+  };
+  mk('barren', 0.383, 0.055, 0.387, 'Mercury');
+  mk('venus', 0.949, 0.815, 0.723, 'Venus');
+  const earth = mk('terran', 1.0, 1.0, 1.0, 'Earth', { life: true });
+  earth.terrain.sea = -0.06; earth.life = true; earth.terrain.life = true; earth.home = true;
+  earth.atmosphere = h.atmosphere('terran', 1, 9.81, 288, rr);
+  addMoon(sys, h, rr, earth, h.makeSolid(sys, rr, 'barren', 1.737e6, 0.0123 * M_EARTH, 270), 3.844e8, 'Moon');
+  const mars = mk('desert', 0.532, 0.107, 1.524, 'Mars');
+  const jup = gas(false, 1.0, 1.0, 5.2, 'Jupiter', ['#c8a27a', '#ebdfc8', '#9b6a45', '#f2e7d2', '#7a4a33']);
+  addMoon(sys, h, rr, jup, h.makeSolid(sys, rr, 'lava', 1.8216e6, 0.015 * M_EARTH, 900, { moon: true }), 4.217e8, 'Io');
+  addMoon(sys, h, rr, jup, h.makeSolid(sys, rr, 'ice', 1.5608e6, 0.008 * M_EARTH, 102), 6.709e8, 'Europa');
+  addMoon(sys, h, rr, jup, h.makeSolid(sys, rr, 'ice', 2.6341e6, 0.025 * M_EARTH, 110), 1.0704e9, 'Ganymede');
+  addMoon(sys, h, rr, jup, h.makeSolid(sys, rr, 'barren', 2.4103e6, 0.018 * M_EARTH, 134), 1.8827e9, 'Callisto');
+  const sat = gas(false, 0.832, 0.299, 9.54, 'Saturn', ['#d8c49a', '#efe2c0', '#b39b6e', '#e8d5a8']);
+  sat.rings = { inner: sat.radius * 1.24, outer: sat.radius * 2.27, seed: 4242, color: hexToLinear('#d9cdb4'), opacity: 0.92 };
+  sat.spin.tilt = qAxis(1, 0, 0, 0.466);
+  addMoon(sys, h, rr, sat, h.makeSolid(sys, rr, 'titan', 2.5747e6, 0.0225 * M_EARTH, 94), 1.2219e9, 'Titan');
+  const ur = gas(true, 0.362, 0.0457, 19.2, 'Uranus', ['#a6d8de', '#b7e0e3', '#98ced6', '#c6e7e8']);
+  ur.spin.tilt = qAxis(1, 0, 0, 1.706);
+  ur.rings = { inner: ur.radius * 1.6, outer: ur.radius * 2.0, seed: 77, color: hexToLinear('#3a3a3a'), opacity: 0.25 };
+  const nep = gas(true, 0.352, 0.054, 30.07, 'Neptune', ['#3f6fc4', '#5a86d4', '#2d58a8', '#7ea2e0']);
+  addMoon(sys, h, rr, nep, h.makeSolid(sys, rr, 'ice', 1.3534e6, 0.0036 * M_EARTH, 38), 3.548e8, 'Triton');
+  sys.home = true;
+}

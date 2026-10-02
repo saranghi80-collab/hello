@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Long Quiet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* One committed look: a dark cockpit at the edge of a star's light.
+   Narrative text in a quiet book serif, instruments in a plain monospace. */
+:root {
+  --void: #030405;
+  --ink: #e8e4da;
+  --ink-dim: rgba(232, 228, 218, 0.62);
+  --ink-faint: rgba(232, 228, 218, 0.16);
+  --sea: #a0d2be;
+  --amber: #e3a54b;
+  --ember: #e0674c;
+  --panel: rgba(7, 9, 11, 0.82);
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --serif: "Cormorant Garamond", "EB Garamond", "Iowan Old Style", Georgia, serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--void); color: var(--ink); overflow: hidden; }
+body { font: 14px/1.5 var(--mono); -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+canvas#scene, canvas#hud { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+canvas#hud { pointer-events: none; }
+#cockpit { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+button { font: inherit; color: inherit; }
+kbd { font: 500 11px/1 var(--mono); border: 1px solid var(--ink-faint); border-bottom-width: 2px; border-radius: 3px; padding: 2px 5px; color: var(--ink); }
+.eyebrow { margin: 0; font: 500 10px/1.4 var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-dim); }
+.dim { color: var(--ink-dim); }
+.small { font-size: 11px; }
+.good { color: var(--sea); }
+.warn { color: var(--amber); }
+.link {
+  appearance: none; background: none; border: 0; padding: 6px 0; cursor: pointer;
+  font: 500 12px/1.2 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim);
+  border-bottom: 1px solid transparent; transition: color .2s, border-color .2s;
+}
+.link:hover, .link:focus-visible { color: var(--ink); border-bottom-color: var(--ink-faint); outline: none; }
+.link.primary { color: var(--ink); border-bottom-color: rgba(232, 228, 218, 0.4); }
+.overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 20; }
+.card {
+  background: var(--panel); border: 1px solid var(--ink-faint); backdrop-filter: blur(6px);
+  padding: 22px 24px; max-width: min(560px, 100%); width: 100%;
+}
+.card h2 { margin: 6px 0 14px; font: 400 30px/1.1 var(--serif); letter-spacing: 0.01em; text-wrap: balance; }
+.card h3 { margin: 4px 0; font: 400 24px/1.15 var(--serif); }
+.card h4 { margin: 14px 0 6px; font: 500 12px/1.4 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.row { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
+.close { position: absolute; top: 12px; right: 14px; }
+hr { border: 0; border-top: 1px solid var(--ink-faint); margin: 14px 0; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 10px 0; font-size: 12px; }
+dt { color: var(--ink-dim); letter-spacing: 0.06em; }
+dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* loading */
+#loading { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); z-index: 40; }
+
+/* title */
+#title { position: fixed; inset: 0; z-index: 30; display: grid; align-content: end; padding: max(28px, 5vh) max(16px, 6vw); background: linear-gradient(90deg, rgba(3,4,5,0.85) 0%, rgba(3,4,5,0.35) 45%, transparent 75%); }
+#title .block { max-width: 640px; display: grid; gap: 18px; }
+#title h1 { margin: 0; font: 300 clamp(48px, 8vw, 104px)/0.95 var(--serif); letter-spacing: 0.02em; text-wrap: balance; }
+#title h1 em { font-style: italic; font-weight: 300; }
+#title .lede { margin: 0; max-width: 52ch; font: 400 19px/1.45 var(--serif); color: var(--ink-dim); }
+#title .menu { display: flex; flex-wrap: wrap; gap: 6px 28px; margin-top: 6px; }
+#title .foot { margin-top: 22px; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(232,228,218,0.4); }
+#new-confirm { margin-top: 4px; font-size: 12px; color: var(--amber); }
+
+/* intro */
+#intro { position: fixed; inset: 0; z-index: 35; background: #000; display: grid; place-items: center; padding: 24px; cursor: pointer; transition: opacity 1.5s; }
+#intro.out { opacity: 0; }
+#intro-lines { max-width: 40ch; display: grid; gap: 18px; }
+#intro-lines p { margin: 0; font: 300 clamp(20px, 2.6vw, 28px)/1.4 var(--serif); opacity: 0; transform: translateY(6px); transition: opacity 2.2s, transform 2.2s; }
+#intro-lines p.meta { font: 500 11px/1.4 var(--mono); letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-dim); }
+#intro-lines p.in { opacity: 1; transform: none; }
+#intro .skip { position: fixed; bottom: 24px; right: 24px; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,228,218,0.35); }
+
+/* transmission */
+#transmission { position: fixed; left: 50%; bottom: max(96px, 11vh); transform: translateX(-50%); width: min(560px, calc(100% - 32px)); z-index: 15; }
+#transmission .card { max-width: none; position: relative; border-left: 2px solid var(--sea); }
+#trans-title { margin: 4px 0 10px; font: 400 26px/1.1 var(--serif); }
+#trans-body { margin: 0; font: 400 18px/1.5 var(--serif); min-height: 3em; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+#trans-meta { margin: 12px 0 0; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); }
+#transmission .foot { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+
+/* survey card */
+#survey { position: fixed; right: max(16px, 3vw); top: 22vh; width: min(330px, calc(100% - 32px)); z-index: 14; }
+#survey .card { position: relative; }
+#survey-name { margin: 2px 0 2px; font: 400 26px/1.1 var(--serif); }
+#survey-note { margin: 10px 0 0; font: 400 17px/1.45 var(--serif); color: var(--ink); }
+
+/* map */
+#map { position: fixed; inset: 0; z-index: 18; background: rgba(2, 3, 4, 0.92); display: grid; grid-template-columns: minmax(0, 1fr) min(340px, 36vw); grid-template-rows: auto minmax(0, 1fr); }
+#map header { grid-column: 1 / -1; display: flex; align-items: center; gap: 24px; padding: 14px 20px; border-bottom: 1px solid var(--ink-faint); }
+#map header .tabs { display: flex; gap: 20px; }
+[role="tab"] { appearance: none; background: none; border: 0; cursor: pointer; padding: 6px 0; font: 500 11px/1 var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid transparent; }
+[role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+#map-canvas { width: 100%; height: 100%; display: block; cursor: crosshair; min-width: 0; }
+#map-info { border-left: 1px solid var(--ink-faint); padding: 18px 20px; overflow: auto; min-width: 0; }
+#map-info h3 { margin: 4px 0; font: 400 24px/1.15 var(--serif); }
+#map-info p { margin: 6px 0; font-size: 12px; }
+#map-inset { position: absolute; left: 20px; bottom: 44px; width: 180px; height: 180px; opacity: 0.85; border: 1px solid var(--ink-faint); }
+.mapwrap { position: relative; min-width: 0; min-height: 0; }
+.mapwrap .insetlabel { position: absolute; left: 20px; bottom: 230px; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-dim); }
+.bodylist { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 2px; }
+.bodylist li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 8px; cursor: pointer; font-size: 12px; border-left: 1px solid transparent; }
+.bodylist li:hover { background: rgba(232,228,218,0.05); }
+.bodylist li.sel { border-left-color: var(--ink); background: rgba(232,228,218,0.06); }
+.bodylist li .moon { padding-left: 14px; color: var(--ink-dim); }
+.bodylist li.sig { color: var(--sea); }
+
+/* journal */
+#journal .card { max-width: min(760px, 100%); max-height: min(80vh, 760px); display: grid; grid-template-rows: auto auto minmax(0, 1fr); position: relative; }
+#journal .tabs { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 6px 0 14px; border-bottom: 1px solid var(--ink-faint); }
+#journal-body { overflow: auto; padding-right: 6px; min-width: 0; }
+#journal-body article { padding: 12px 0; border-bottom: 1px solid var(--ink-faint); }
+#journal-body article h4 { margin: 4px 0 6px; font: 400 21px/1.2 var(--serif); letter-spacing: 0; text-transform: none; color: var(--ink); }
+#journal-body article p { margin: 0; font: 400 17px/1.5 var(--serif); max-width: 62ch; }
+#journal-body article p.eyebrow { font: 500 10px/1.4 var(--mono); letter-spacing: 0.18em; margin-bottom: 4px; }
+#journal-body article p.own { font-style: italic; }
+#journal-body .letter p:not(.eyebrow) { font-style: italic; }
+.stats { font-size: 13px; max-width: 420px; }
+.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 12px; }
+.plain li { display: flex; justify-content: space-between; gap: 12px; }
+
+/* help */
+#help .card { max-width: min(720px, 100%); position: relative; max-height: 86vh; overflow: auto; }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 28px; font-size: 12px; }
+.keys div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid rgba(232,228,218,0.06); }
+.keys span:first-child { color: var(--ink-dim); }
+
+/* settings */
+.field { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 0; font-size: 12px; border-bottom: 1px solid rgba(232,228,218,0.06); }
+.field label { color: var(--ink-dim); letter-spacing: 0.06em; }
+.field select, .field input[type="range"] { width: 180px; max-width: 46vw; }
+select { background: #0b0d10; color: var(--ink); border: 1px solid var(--ink-faint); padding: 5px 8px; font: inherit; }
+input[type="range"] { accent-color: var(--sea); }
+input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
+
+/* death */
+#death { background: rgba(0,0,0,0.75); }
+#death h2 { font-size: 40px; }
+#death-cause { font: 400 20px/1.45 var(--serif); }
+
+/* writer */
+#writer textarea { width: 100%; min-height: 140px; resize: vertical; background: rgba(0,0,0,0.4); color: var(--ink); border: 1px solid var(--ink-faint); padding: 12px; font: 400 18px/1.5 var(--serif); }
+#writer textarea:focus { outline: 1px solid var(--sea); }
+
+#nowebgl { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: 400 20px/1.5 var(--serif); }
+.focus-ring:focus-visible { outline: 1px solid var(--sea); }
+
+@media (max-width: 720px) {
+  #map { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) 40vh; }
+  #map-info { border-left: 0; border-top: 1px solid var(--ink-faint); }
+  #map-inset, .mapwrap .insetlabel { display: none; }
+  #title { background: linear-gradient(0deg, rgba(3,4,5,0.9) 0%, rgba(3,4,5,0.3) 60%, transparent 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #intro-lines p { transition: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="scene" tabindex="0" aria-label="The game view"></canvas>
+<svg id="cockpit" viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true" hidden>
+  <defs>
+    <linearGradient id="strut" x1="0" x2="1"><stop offset="0" stop-color="#050607"/><stop offset="1" stop-color="#0c0e10"/></linearGradient>
+  </defs>
+  <path d="M0 0 L120 0 L250 600 L0 600 Z" fill="url(#strut)" opacity="0.96"/>
+  <path d="M1000 0 L880 0 L750 600 L1000 600 Z" fill="url(#strut)" opacity="0.96"/>
+  <path d="M0 0 L1000 0 L1000 26 Q500 60 0 26 Z" fill="#060708" opacity="0.97"/>
+  <path d="M0 600 L0 520 Q500 470 1000 520 L1000 600 Z" fill="#07080a" opacity="0.98"/>
+  <path d="M230 520 Q500 482 770 520" stroke="rgba(232,228,218,0.08)" stroke-width="1" fill="none"/>
+</svg>
+<canvas id="hud" aria-hidden="true"></canvas>
+
+<div id="loading" hidden></div>
+
+<section id="title" hidden aria-labelledby="game-title">
+  <div class="block">
+    <p class="eyebrow">Outer Survey Program · Surveyor Eleven</p>
+    <h1 id="game-title">The Long <em>Quiet</em></h1>
+    <p class="lede">A single ship, a real-scale galaxy, and nobody else. Survey worlds, follow the beacons an earlier surveyor left behind, and watch decades pass at home with every jump.</p>
+    <div class="menu">
+      <button class="link" id="btn-continue">Continue</button>
+      <button class="link primary" id="btn-new">Begin</button>
+      <button class="link" id="btn-controls">Controls</button>
+      <button class="link" id="btn-settings-title">Settings</button>
+    </div>
+    <div id="new-confirm" hidden>
+      Starting over erases your voyage.
+      <div class="row" style="margin-top:6px">
+        <button class="link" id="btn-new-confirm">Erase and begin</button>
+        <button class="link" id="btn-new-cancel">Keep it</button>
+      </div>
+    </div>
+    <p class="foot">Keyboard and mouse · headphones recommended · progress saves in this browser</p>
+  </div>
+</section>
+
+<section id="intro" hidden>
+  <div id="intro-lines"></div>
+  <span class="skip">Click or press any key to skip</span>
+</section>
+
+<section id="transmission" hidden aria-live="polite">
+  <div class="card">
+    <p class="eyebrow" id="trans-kicker"></p>
+    <h3 id="trans-title"></h3>
+    <p id="trans-body"></p>
+    <div class="foot">
+      <p id="trans-meta"></p>
+      <button class="link" id="trans-close">Close · Enter</button>
+    </div>
+  </div>
+</section>
+
+<aside id="survey" hidden>
+  <div class="card">
+    <button class="link close" id="survey-close" aria-label="Close survey">×</button>
+    <p class="eyebrow">Survey complete</p>
+    <h3 id="survey-name"></h3>
+    <p class="dim small" id="survey-type"></p>
+    <dl id="survey-data"></dl>
+    <p id="survey-note"></p>
+  </div>
+</aside>
+
+<section id="map" hidden aria-label="Maps">
+  <header>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-maptab="galaxy" aria-selected="true">Galaxy · M</button>
+      <button role="tab" data-maptab="system" aria-selected="false">System · N</button>
+    </div>
+    <span style="flex:1"></span>
+    <button class="link" id="map-close">Close · Esc</button>
+  </header>
+  <div class="mapwrap">
+    <canvas id="map-canvas"></canvas>
+    <span class="insetlabel">The galaxy · you are here</span>
+    <canvas id="map-inset"></canvas>
+  </div>
+  <div id="map-info"></div>
+</section>
+
+<section id="journal" class="overlay" hidden aria-label="Journal">
+  <div class="card">
+    <button class="link close" id="journal-close">Close · K</button>
+    <p class="eyebrow">Journal</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-jtab="log" aria-selected="true">Recovered logs</button>
+      <button role="tab" data-jtab="home" aria-selected="false">From home</button>
+      <button role="tab" data-jtab="survey" aria-selected="false">Survey</button>
+      <button role="tab" data-jtab="voyage" aria-selected="false">Voyage</button>
+    </div>
+    <div id="journal-body"></div>
+  </div>
+</section>
+
+<section id="pause" class="overlay" hidden aria-label="Paused">
+  <div class="card">
+    <p class="eyebrow">Paused · the universe keeps turning</p>
+    <h2>The Long Quiet</h2>
+    <div class="row">
+      <button class="link primary" id="btn-resume">Resume</button>
+      <button class="link" id="btn-help">Controls</button>
+      <button class="link" id="btn-settings">Settings</button>
+      <button class="link" id="btn-quit">Save and return to title</button>
+    </div>
+  </div>
+</section>
+
+<section id="help" class="overlay" hidden aria-label="Controls">
+  <div class="card">
+    <button class="link close" id="help-close">Close · H</button>
+    <p class="eyebrow">Controls</p>
+    <h2>Flying the TERN</h2>
+    <div class="keys">
+      <div><span>Steer</span><span>Mouse (click to capture)</span></div>
+      <div><span>Throttle</span><span><kbd>W</kbd> <kbd>S</kbd> · <kbd>X</kbd> zero</span></div>
+      <div><span>Roll</span><span><kbd>A</kbd> <kbd>D</kbd></span></div>
+      <div><span>Strafe</span><span><kbd>Q</kbd> <kbd>E</kbd></span></div>
+      <div><span>Climb / descend</span><span><kbd>R</kbd> <kbd>F</kbd></span></div>
+      <div><span>Cruise drive</span><span><kbd>Tab</kbd></span></div>
+      <div><span>Scan</span><span><kbd>Space</kbd> tap · hold on target</span></div>
+      <div><span>Target ahead</span><span><kbd>T</kbd></span></div>
+      <div><span>Autopilot to target</span><span><kbd>P</kbd></span></div>
+      <div><span>Landing gear</span><span><kbd>G</kbd></span></div>
+      <div><span>Floodlight</span><span><kbd>L</kbd></span></div>
+      <div><span>Jump to plotted star</span><span><kbd>J</kbd></span></div>
+      <div><span>Galaxy map</span><span><kbd>M</kbd></span></div>
+      <div><span>System map</span><span><kbd>N</kbd></span></div>
+      <div><span>Journal</span><span><kbd>K</kbd></span></div>
+      <div><span>Camera</span><span><kbd>C</kbd> · wheel zoom · right-drag look</span></div>
+      <div><span>Time compression</span><span><kbd>,</kbd> <kbd>.</kbd> when landed</span></div>
+      <div><span>Pause</span><span><kbd>Esc</kbd></span></div>
+    </div>
+    <h4>How it works</h4>
+    <p class="dim small">Cruise drive speed scales with your distance to the nearest surface, so point at a world and the ship slows itself on approach. Drop to flight within a few thousand kilometres, lower the gear and descend slowly to land. Skim close to a star, or through a gas giant's upper atmosphere, to refuel; watch your heat. Jumps cross light-years at nearly the speed of light: a few weeks pass aboard, and as many years at home as the light-years you travel.</p>
+  </div>
+</section>
+
+<section id="settings" class="overlay" hidden aria-label="Settings">
+  <div class="card">
+    <button class="link close" id="settings-close">Close</button>
+    <p class="eyebrow">Settings</p>
+    <h2>Instruments</h2>
+    <div class="field"><label for="set-quality">Render quality</label>
+      <select id="set-quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="ultra">Ultra</option></select></div>
+    <div class="field"><label for="set-fov">Field of view</label><input type="range" id="set-fov" min="45" max="90" step="1"></div>
+    <div class="field"><label for="set-sens">Mouse sensitivity</label><input type="range" id="set-sens" min="0.3" max="2.5" step="0.05"></div>
+    <div class="field"><label for="set-invert">Invert mouse Y</label><input type="checkbox" id="set-invert"></div>
+    <div class="field"><label for="set-volume">Volume</label><input type="range" id="set-volume" min="0" max="1" step="0.01"></div>
+    <div class="field"><label for="set-music">Music</label><input type="range" id="set-music" min="0" max="1" step="0.01"></div>
+  </div>
+</section>
+
+<section id="death" class="overlay" hidden aria-label="Signal lost">
+  <div class="card">
+    <p class="eyebrow">Telemetry ended</p>
+    <h2>Signal lost</h2>
+    <p id="death-cause"></p>
+    <p class="dim small" id="death-stats"></p>
+    <div class="row" style="margin-top:14px">
+      <button class="link primary" id="btn-reload">Return to last save</button>
+      <button class="link" id="btn-death-title">Title</button>
+    </div>
+  </div>
+</section>
+
+<section id="writer" class="overlay" hidden aria-label="Leave a beacon">
+  <div class="card">
+    <p class="eyebrow">Your beacon</p>
+    <h2>Leave something for whoever comes next</h2>
+    <label class="dim small" for="writer-text">It will broadcast here for as long as the power lasts.</label>
+    <textarea id="writer-text" maxlength="600"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="link primary" id="writer-save">Transmit</button>
+      <button class="link" id="writer-skip">Leave nothing</button>
+    </div>
+  </div>
+</section>
+
+<div id="nowebgl" hidden>This voyage needs WebGL 2. Try a recent desktop browser with hardware acceleration turned on.</div>
+
+<script src="game.js"></script>
+</body>
+</html>

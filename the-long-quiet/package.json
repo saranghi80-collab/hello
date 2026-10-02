@@ -1,0 +1,15 @@
+{
+  "name": "the-long-quiet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A lonely, full-scale space exploration game for the browser.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.170.0"
+  }
+}
