@@ -27,6 +27,8 @@ import {
 const SAVE_KEY = 'the-long-quiet/v1';
 const SETTINGS_KEY = 'the-long-quiet/settings';
 const MAX_JUMP = 15; // ly, drive limit
+const BOOSTS = [1, 10, 100, 1000, 10000, 100000];
+const DEFAULT_CHEATS = { boost: 1, jumpAnywhere: false, fastJump: false, infiniteFuel: false, invincible: false };
 const LY_PER_TANK = 30;
 const WARPS = [1, 10, 100, 1000, 10000];
 const NO_AIR = { rho: 0, P: 0, T: 0, light: 1, depth: 0, gas: false };
@@ -85,11 +87,14 @@ export class Game {
   // ------------------------------------------------------------------ settings
   loadSettings() {
     const def = { quality: 'high', invertY: false, sensitivity: 1, volume: 0.8, music: 0.7, fov: 62 };
-    try {
-      const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-      return { ...def, ...s };
-    } catch (e) { return def; }
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) { /* storage unavailable */ }
+    const out = { ...def, ...s };
+    out.cheats = { ...DEFAULT_CHEATS, ...(s.cheats || {}) };
+    if (!BOOSTS.includes(out.cheats.boost)) out.cheats.boost = 1;
+    return out;
   }
+  get cheats() { return this.settings.cheats; }
   applySettings() {
     const s = this.settings;
     if (this.engine.quality !== s.quality) {
@@ -363,7 +368,8 @@ export class Game {
 
   heightAt = (bodyIndex, localDir) => this.view.planets[bodyIndex].heightAt(localDir);
 
-  jumpRange() { return Math.min(MAX_JUMP, this.ship.fuel * LY_PER_TANK); }
+  maxJump() { return this.cheats.jumpAnywhere ? 1e6 : MAX_JUMP; }
+  jumpRange() { return this.cheats.jumpAnywhere ? 1e6 : Math.min(MAX_JUMP, this.ship.fuel * LY_PER_TANK); }
   jumpCost(d) { return d / LY_PER_TANK; }
 
   setJumpTarget(s, keepRoute = false) {
@@ -541,6 +547,7 @@ export class Game {
       else if (!this.panels.journal.hidden) this.panels.toggleJournal(false);
       else if (!this.panels.help.hidden) this.panels.toggleHelp(false);
       else if (!document.getElementById('settings').hidden) document.getElementById('settings').hidden = true;
+      else if (this.panels.cheatsOpen) this.panels.toggleCheats(false);
       else if (this.panels.transOpen) this.panels.closeTransmission();
       else this.panels.togglePause();
     }
@@ -548,6 +555,7 @@ export class Game {
     if (any(['KeyN'])) this.maps.toggle(this.maps.open && this.maps.tab === 'system' ? false : true, 'system');
     if (any(['KeyK'])) this.panels.toggleJournal();
     if (any(['KeyH', 'F1'])) this.panels.toggleHelp();
+    if (any(['Backquote', 'F2'])) this.panels.toggleCheats();
     if (any(['Enter']) && this.panels.transOpen) this.panels.closeTransmission();
     if (!i.enabled) return;
     if (i.hit('KeyC')) { this.camMode = this.camMode === 'chase' ? 'cockpit' : 'chase'; this.audio.blip(); }
@@ -568,6 +576,8 @@ export class Game {
     if (i.hit('Space')) this.spacePressed();
     if (i.hit('Period')) this.changeWarp(1);
     if (i.hit('Comma')) this.changeWarp(-1);
+    if (i.hit('Equal') || i.hit('NumpadAdd')) this.changeBoost(1);
+    if (i.hit('Minus') || i.hit('NumpadSubtract')) this.changeBoost(-1);
     if (i.wheel) this.camZoom = clamp(this.camZoom * (i.wheel > 0 ? 1.12 : 0.89), 0.45, 6);
     const rate = ship.mode === 'cruise' ? 0.45 : 0.6;
     if (i.down('KeyW')) ship.throttle = Math.min(1, ship.throttle + rate * dt);
@@ -584,6 +594,15 @@ export class Game {
     }
     this.warpIndex = clamp(this.warpIndex + d, 0, WARPS.length - 1);
     this.hud.note(this.warpIndex ? `Time ×${WARPS[this.warpIndex]}` : 'Time normal', 'info', 2);
+  }
+
+  changeBoost(d) {
+    const c = this.cheats;
+    const i = clamp(BOOSTS.indexOf(c.boost) + d, 0, BOOSTS.length - 1);
+    c.boost = BOOSTS[i];
+    this.applySettings();
+    this.audio.blip();
+    this.hud.note(c.boost > 1 ? `Speed boost ×${c.boost.toLocaleString('en-US')} · cheat` : 'Speed boost off', 'info', 3);
   }
 
   toggleCruise() {
@@ -619,12 +638,13 @@ export class Game {
     const t = this.jumpTarget;
     if (!t) { this.hud.note('No jump target. Open the galaxy map (M) and pick a star.', 'warn', 5); this.audio.deny(); return; }
     const d = distLy(t.pos, this.star.pos);
-    if (d > MAX_JUMP) { this.hud.note(`${t.name} is beyond the drive's ${MAX_JUMP} ly limit.`, 'warn', 5); this.audio.deny(); return; }
-    if (this.jumpCost(d) > ship.fuel) { this.hud.note('Not enough fuel. Skim a star or a gas giant.', 'warn', 5); this.audio.deny(); return; }
+    const cheat = this.cheats;
+    if (d > this.maxJump()) { this.hud.note(`${t.name} is beyond the drive's ${MAX_JUMP} ly limit.`, 'warn', 5); this.audio.deny(); return; }
+    if (!cheat.jumpAnywhere && !cheat.infiniteFuel && this.jumpCost(d) > ship.fuel) { this.hud.note('Not enough fuel. Skim a star or a gas giant.', 'warn', 5); this.audio.deny(); return; }
     if (ship.mode === 'landed') { this.hud.note('Take off before jumping.', 'warn', 4); this.audio.deny(); return; }
-    const lock = this.massLock(this.shipWorld);
+    const lock = cheat.jumpAnywhere ? null : this.massLock(this.shipWorld);
     if (lock) { this.hud.note(`Mass lock: too close to ${lock}. Move further out.`, 'warn', 5); this.audio.deny(); return; }
-    ship.fuel -= this.jumpCost(d);
+    if (!cheat.jumpAnywhere && !cheat.infiniteFuel) ship.fuel -= this.jumpCost(d);
     this.warpIndex = 0;
     this.autopilot = false;
     this.jump.start(t);
@@ -693,6 +713,8 @@ export class Game {
     ship.bottom = this.shipModel.bottom;
     this.air = ship.frame >= 0 ? airAt(this.sys.bodies[ship.frame], ship.alt) : NO_AIR;
     ship.air = this.air;
+    ship.boost = this.cheats.boost;
+    if (this.cheats.infiniteFuel) ship.fuel = 1;
     let jumpLevel = 0;
 
     if (this.jump.active) {
@@ -718,7 +740,7 @@ export class Game {
       if (ship.mode === 'cruise') {
         const near = this.nearestSurface(this._shipWorld);
         // the drive governor holds speed down in air so entry heating stays survivable
-        const airLimit = this.air.rho > 1e-9 ? safeEntrySpeed(this.air.rho) * 0.8 : Infinity;
+        const airLimit = this.air.rho > 1e-9 ? safeEntrySpeed(this.air.rho) * 0.8 * ship.boost : Infinity;
         ship.updateCruise(dt, near, airLimit);
         const fb = ship.frame >= 0 ? this.sys.bodies[ship.frame] : null;
         const rBH = this.sys.star.starKind === 'blackhole' ? vec.len(this._shipWorld) / this.sys.star.radius : Infinity;
@@ -814,7 +836,7 @@ export class Game {
       return;
     }
     if (ship.mode === 'flight' && align > 0.995 && info.surfaceDist > 20000 && ship.alt > 2000) this.toggleCruise();
-    if (ship.mode === 'cruise') ship.throttle = align > 0.98 ? 1 : 0.15;
+    if (ship.mode === 'cruise') ship.throttle = align > 0.98 ? 1 : 0.15 / (ship.boost || 1);
   }
 
   handleContact(hit) {
@@ -827,6 +849,17 @@ export class Game {
       this.hud.note(`${b.name}. ${lines[Math.floor(Math.random() * lines.length)]}`, 'info', 9);
       setTimeout(() => this.hud.note('Comma and period compress time. Watch the sky turn.', 'info', 8), 4000);
       this.saveGame();
+      return;
+    }
+    if (hit.type === 'scrape' && this.cheats.invincible) {
+      // the cheat soaks up the impact: the ship stops dead where it hit
+      if (hit.impact > 6) {
+        ship.v = [0, 0, 0];
+        ship.throttle = 0;
+        this.audio.thud(Math.min(0.6, 0.15 + hit.impact / 400));
+        this.shake = Math.min(1.5, (this.shake || 0) + Math.min(1, hit.impact / 200));
+        if (hit.impact > 70) this.hud.note(`Impact at ${fmtSpeed(hit.impact)} absorbed · invincible`, 'warn', 3);
+      }
       return;
     }
     if (hit.type === 'scrape') {
@@ -876,7 +909,7 @@ export class Game {
       scoop = 0.22 * Math.min(4, (2 * R / rStar) ** 2);
       heatIn += scoop * 0.05;
     }
-    if (!bh && rStar < R * 1.02) {
+    if (!bh && rStar < R * 1.02 && !this.cheats.invincible) {
       this.die(`Flew into ${star.name}. The hull was gone long before it reached the photosphere; what was left of it became part of the star.`);
       return;
     }
@@ -917,11 +950,12 @@ export class Game {
     if (bh || star.starKind === 'neutron') {
       this.tidal = (2 * 6.674e-11 * star.mass * 30) / (rStar * rStar * rStar);
       if (this.tidal > 40) this.harm(((this.tidal - 40) / 600) * simDt, 'tidal');
-      if (this.tidal > 3000) { this.die(this.deathText('tidal')); return; }
+      if (this.tidal > 3000 && !this.cheats.invincible) { this.die(this.deathText('tidal')); return; }
       if (bh && rStar < R && this.state === 'play') { this.enterHorizon(); return; }
     }
     ship.heat += (heatIn - 0.075 * ship.heat) * simDt;
     ship.heat = Math.max(0, ship.heat);
+    if (this.cheats.invincible) ship.heat = Math.min(ship.heat, 0.95);
     this.heatCause = cause;
     if (ship.heat > 1) this.harm((ship.heat - 1) * 0.06 * simDt, 'heat');
     if (scoop > 0) ship.fuel = Math.min(1, ship.fuel + scoop * simDt * 0.5);
@@ -932,7 +966,7 @@ export class Game {
 
   harm(amount, kind) {
     const ship = this.ship;
-    if (amount <= 0 || this.state !== 'play') return;
+    if (amount <= 0 || this.state !== 'play' || this.cheats.invincible) return;
     ship.hull -= amount;
     if (amount > 0.002) this.shake = Math.min(1.2, (this.shake || 0) + amount * 4);
     if (ship.hull <= 0) this.die(this.deathText(kind));
@@ -1509,6 +1543,7 @@ export class Game {
       pixelAngle: this.engine.pixelAngle,
       mode: ship.mode,
       modeLabel: modeLabels[ship.mode] + (this.autopilot ? ' · AUTOPILOT' : '') + (this.warpIndex ? ` · TIME ×${WARPS[this.warpIndex]}` : ''),
+      boostLabel: this.cheats.boost > 1 && (ship.mode === 'cruise' || ship.mode === 'flight') ? `SPEED BOOST ×${this.cheats.boost.toLocaleString('en-US')}` : null,
       modeColor: ship.mode === 'cruise' ? 'rgba(160,210,190,0.9)' : null,
       noseDir: noseRel,
       velDir: vec.len(velRel) > 0 ? velRel : null,

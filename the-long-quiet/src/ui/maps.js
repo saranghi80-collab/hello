@@ -146,17 +146,19 @@ export class Maps {
     }
     // jump range
     const range = g.jumpRange();
-    c.strokeStyle = 'rgba(160,210,190,0.35)';
-    c.setLineDash([3, 4]);
-    c.beginPath();
-    for (let i = 0; i <= 96; i++) {
-      const a = (i / 96) * Math.PI * 2;
-      const p = this.projectLy([here[0] + Math.cos(a) * range, here[1], here[2] + Math.sin(a) * range]);
-      if (!p) continue;
-      i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y);
+    if (range < 1000) { // the jump-anywhere cheat has no ring to draw
+      c.strokeStyle = 'rgba(160,210,190,0.35)';
+      c.setLineDash([3, 4]);
+      c.beginPath();
+      for (let i = 0; i <= 96; i++) {
+        const a = (i / 96) * Math.PI * 2;
+        const p = this.projectLy([here[0] + Math.cos(a) * range, here[1], here[2] + Math.sin(a) * range]);
+        if (!p) continue;
+        i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y);
+      }
+      c.stroke();
+      c.setLineDash([]);
     }
-    c.stroke();
-    c.setLineDash([]);
     // direction to Sol and the galactic core
     this.edgeMarker(c, SOL_POS, 'SOL', 'rgba(232,210,150,0.8)');
     this.edgeMarker(c, [0, 0, 0], 'GALACTIC CORE', INK + '0.35)', true);
@@ -348,8 +350,8 @@ export class Maps {
           ${trail ? '<p class="good">A survey beacon is broadcasting from this system.</p>' : ''}
           ${s.id === 'SOL' ? '<p class="dim">Home.</p>' : ''}
           ${s.kind === 'blackhole' ? '<p class="warn">A black hole. There is no star to scoop here, and time near it runs slow: every hour close to the horizon is many at home. Fall in, and nothing comes back.</p>' : ''}
-          <p class="dim small">${ok ? 'Close the map, then press J to begin the jump.' : d > 15 ? 'Too far for one jump. Plot a route through stars on the way.' : 'Not enough fuel for this jump. Skim a star or a gas giant first.'}</p>
-          ${d > 15 ? '<button class="link primary" id="btn-route">Plot route</button>' : ''}
+          <p class="dim small">${ok ? 'Close the map, then press J to begin the jump.' : d > g.maxJump() ? 'Too far for one jump. Plot a route through stars on the way.' : 'Not enough fuel for this jump. Skim a star or a gas giant first.'}</p>
+          ${d > g.maxJump() ? '<button class="link primary" id="btn-route">Plot route</button>' : ''}
           ${g.route && g.route.dest.id === s.id ? `<p class="good small">Route plotted: ${g.route.path.length} jumps. Press J at each star.</p>` : ''}`;
       } else {
         html += '<hr><p class="dim">Select a star to plot a jump. Its distance in light-years is also the number of years that will pass at home.</p>';

@@ -271,6 +271,7 @@ input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
       <button class="link primary" id="btn-resume">Resume</button>
       <button class="link" id="btn-help">Controls</button>
       <button class="link" id="btn-settings">Settings</button>
+      <button class="link" id="btn-cheats">Cheats</button>
       <button class="link" id="btn-quit">Save and return to title</button>
     </div>
   </div>
@@ -300,6 +301,8 @@ input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
       <div><span>Camera</span><span><kbd>C</kbd> · wheel zoom · right-drag look</span></div>
       <div><span>Time compression</span><span><kbd>,</kbd> <kbd>.</kbd> when landed</span></div>
       <div><span>Pause</span><span><kbd>Esc</kbd></span></div>
+      <div><span>Cheats</span><span><kbd>`</kbd> or <kbd>F2</kbd></span></div>
+      <div><span>Speed boost (cheat)</span><span><kbd>=</kbd> <kbd>-</kbd></span></div>
     </div>
     <h4>How it works</h4>
     <p class="dim small">Cruise drive speed scales with your distance to the nearest surface, so point at a world and the ship slows itself on approach. Drop to flight within a few thousand kilometres, lower the gear and descend slowly to land. Skim close to a star, or through a gas giant's upper atmosphere, to refuel; watch your heat. Jumps cross light-years at nearly the speed of light: a few weeks pass aboard, and as many years at home as the light-years you travel.</p>
@@ -318,6 +321,24 @@ input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
     <div class="field"><label for="set-invert">Invert mouse Y</label><input type="checkbox" id="set-invert"></div>
     <div class="field"><label for="set-volume">Volume</label><input type="range" id="set-volume" min="0" max="1" step="0.01"></div>
     <div class="field"><label for="set-music">Music</label><input type="range" id="set-music" min="0" max="1" step="0.01"></div>
+  </div>
+</section>
+
+<section id="cheats" class="overlay" hidden aria-label="Cheats">
+  <div class="card">
+    <button class="link close" id="cheats-close">Close · `</button>
+    <p class="eyebrow">Cheats</p>
+    <h2>Off the books</h2>
+    <div class="field"><label for="cheat-boost">Speed boost <span class="dim small">· <kbd>=</kbd> <kbd>-</kbd> while flying</span></label>
+      <select id="cheat-boost">
+        <option value="1">Off</option><option value="10">×10</option><option value="100">×100</option>
+        <option value="1000">×1,000</option><option value="10000">×10,000</option><option value="100000">×100,000</option>
+      </select></div>
+    <div class="field"><label for="cheat-jump">Jump anywhere: no range limit, no mass lock</label><input type="checkbox" id="cheat-jump"></div>
+    <div class="field"><label for="cheat-fastjump">Fast jumps</label><input type="checkbox" id="cheat-fastjump"></div>
+    <div class="field"><label for="cheat-fuel">Infinite fuel</label><input type="checkbox" id="cheat-fuel"></div>
+    <div class="field"><label for="cheat-invincible">Invincible: no heat, crash or hull damage</label><input type="checkbox" id="cheat-invincible"></div>
+    <p class="dim small">The boost raises the cruise drive's ceiling from 2,400 c to as much as 240 million c, and lets flight mode build speed much faster. The drive still stops you short of a surface. Without invincibility, air at those speeds will burn you up. Nothing gets you out of a black hole.</p>
   </div>
 </section>
 

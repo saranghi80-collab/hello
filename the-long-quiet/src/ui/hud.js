@@ -187,6 +187,7 @@ export class Hud {
     // --- bottom left: flight ---
     const bx = pad, by = H - pad;
     this.text(s.modeLabel, bx, by - 92, { size: 10, color: s.modeColor || INK + '0.6)', spacing: 0.24, weight: 600 });
+    if (s.boostLabel) this.text(s.boostLabel, bx, by - 108, { size: 10, color: WARN, spacing: 0.24, weight: 600 });
     this.text(fmtSpeed(s.speed), bx, by - 66, { size: 22, weight: 500, spacing: 0.02 });
     if (s.mode === 'cruise' && s.cruiseCap) this.text(`LIMIT ${fmtSpeed(s.cruiseCap)}`, bx, by - 50, { size: 10, color: INK + '0.5)' });
     else if (s.mode === 'flight') this.text(s.gLine || '', bx, by - 50, { size: 10, color: INK + '0.5)' });
@@ -209,7 +210,7 @@ export class Hud {
 
     // --- bottom right: systems ---
     const rx = W - pad - 170;
-    this.bar(rx, by - 80, 170, s.fuel, s.fuel < 0.2 ? WARN : INK + '0.8)', 'FUEL', `${Math.round(s.fuel * 100)}%  ·  ${s.rangeLy.toFixed(1)} LY`);
+    this.bar(rx, by - 80, 170, s.fuel, s.fuel < 0.2 ? WARN : INK + '0.8)', 'FUEL', `${Math.round(s.fuel * 100)}%  ·  ${s.rangeLy >= 1000 ? 'ANY' : `${s.rangeLy.toFixed(1)} LY`}`);
     this.bar(rx, by - 50, 170, s.heat, s.heat > 0.85 ? CRIT : s.heat > 0.6 ? WARN : INK + '0.8)', 'HEAT', `${Math.round(s.heat * 100)}%`);
     this.bar(rx, by - 20, 170, s.hull, s.hull < 0.3 ? CRIT : s.hull < 0.6 ? WARN : INK + '0.8)', 'HULL', `${Math.round(s.hull * 100)}%`);
     if (s.scooping) this.text('FUEL SCOOP ACTIVE', rx, by - 102, { size: 10, color: 'rgba(160,210,190,0.9)', spacing: 0.18 });

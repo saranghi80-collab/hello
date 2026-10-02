@@ -42,14 +42,17 @@ export class Panels {
     $('btn-reload').addEventListener('click', () => { this.death.hidden = true; game.continueGame(); });
     $('btn-death-title').addEventListener('click', () => { this.death.hidden = true; game.toTitle(); });
     $('settings-close').addEventListener('click', () => { $('settings').hidden = true; });
+    $('btn-cheats').addEventListener('click', () => { this.togglePause(false); this.toggleCheats(true); });
+    $('cheats-close').addEventListener('click', () => this.toggleCheats(false));
     $('writer-save').addEventListener('click', () => this.saveWriter());
     $('writer-skip').addEventListener('click', () => { this.writer.hidden = true; });
     this.journal.querySelectorAll('[data-jtab]').forEach((b) => b.addEventListener('click', () => this.renderJournal(b.dataset.jtab)));
     this.bindSettings();
+    this.bindCheats();
   }
 
   get modalOpen() {
-    return !this.journal.hidden || !this.pause.hidden || !this.help.hidden || !$('settings').hidden || !this.writer.hidden || !this.death.hidden;
+    return !this.journal.hidden || !this.pause.hidden || !this.help.hidden || !$('settings').hidden || !$('cheats').hidden || !this.writer.hidden || !this.death.hidden;
   }
 
   showTitle(hasSave) {
@@ -233,6 +236,40 @@ export class Panels {
     };
     [q, inv, sens, vol, mus, fov].forEach((el) => el.addEventListener('input', apply));
     q.addEventListener('change', apply);
+  }
+
+  toggleCheats(force) {
+    const el = $('cheats');
+    const open = force ?? el.hidden;
+    el.hidden = !open;
+    if (open) { this.syncCheats(); this.game.input.releaseLock(); }
+  }
+
+  get cheatsOpen() { return !$('cheats').hidden; }
+
+  syncCheats() {
+    const c = this.game.cheats;
+    $('cheat-boost').value = String(c.boost);
+    $('cheat-jump').checked = c.jumpAnywhere;
+    $('cheat-fastjump').checked = c.fastJump;
+    $('cheat-fuel').checked = c.infiniteFuel;
+    $('cheat-invincible').checked = c.invincible;
+  }
+
+  bindCheats() {
+    const g = this.game;
+    const els = ['cheat-boost', 'cheat-jump', 'cheat-fastjump', 'cheat-fuel', 'cheat-invincible'].map($);
+    const apply = () => {
+      const c = g.cheats;
+      c.boost = Number($('cheat-boost').value) || 1;
+      c.jumpAnywhere = $('cheat-jump').checked;
+      c.fastJump = $('cheat-fastjump').checked;
+      c.infiniteFuel = $('cheat-fuel').checked;
+      c.invincible = $('cheat-invincible').checked;
+      g.applySettings();
+    };
+    els.forEach((el) => el.addEventListener('change', apply));
+    this.syncCheats();
   }
 
   // ---------- death ----------

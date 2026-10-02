@@ -255,7 +255,9 @@ export class Ship {
     const alt = this.alt;
     // speed limits that keep ground flying manageable; a gas giant has no ground
     const groundAlt = b && b.solid ? alt : 1e9;
-    const vmax = clamp(60 + (isFinite(groundAlt) ? groundAlt : 1e9) * 0.35, 60, 2500);
+    // the speed boost cheat raises the ceiling and the thrust, and loosens the low-level limit a little
+    const boost = this.boost || 1;
+    const vmax = clamp((60 + (isFinite(groundAlt) ? groundAlt : 1e9) * 0.35) * Math.min(boost, 10), 60, 2500 * boost);
     // aerodynamic drag against the air, which turns with the planet
     const rho = this.air ? this.air.rho : 0;
     const vlen = len(this.v);
@@ -271,11 +273,14 @@ export class Ship {
     const tau = 0.9;
     const aReq = sub(sub(scl(sub(vCmd, this.v), 1 / tau), gvec), aDrag);
     const ab = qRotate(qConj(this.q), aReq);
-    const lim = { fwd: 34, back: 16, lat: 12, up: 26, down: 12 };
+    // boosted, the main engine can reach its new ceiling in about ten seconds
+    const kb = boost > 1 ? boost * 6 : 1;
+    const lim = { fwd: 34 * kb, back: 16 * kb, lat: 12 * Math.sqrt(kb), up: 26 * Math.sqrt(kb), down: 12 * Math.sqrt(kb) };
     ab[0] = clamp(ab[0], -lim.lat, lim.lat);
     ab[1] = clamp(ab[1], -lim.down, lim.up);
     ab[2] = clamp(ab[2], -lim.fwd, lim.back);
     this.thrust = clamp(Math.max(-ab[2], 0) / lim.fwd + Math.abs(ab[1]) / lim.up * 0.25, 0, 1);
+    if (boost > 1) this.thrust = Math.max(this.thrust, clamp(Math.max(-ab[2], 0) / 34, 0, 1));
     const a = add(qRotate(this.q, ab), gvec);
     // drag applied semi-implicitly so it stays stable in very dense air
     this.v = scl(add(this.v, scl(a, dt)), 1 / (1 + SHIP_DRAG_K * rho * vlen * dt));
@@ -288,9 +293,13 @@ export class Ship {
   }
 
   updateCruise(dt, nearest, airLimit = Infinity) {
-    const cap = Math.min(clamp(0.38 * nearest, 400, 2400 * C), airLimit);
+    const boost = this.boost || 1;
+    // never cover more than most of the gap to the nearest surface in one step, so even a
+    // boosted drive cannot carry the ship through a world
+    const cap = Math.min(clamp(0.38 * nearest * boost, 400, 2400 * C * boost), airLimit, (0.9 * nearest) / Math.max(dt, 1e-3));
     const target = this.throttle * cap;
-    if (this.cruiseV < target) this.cruiseV = Math.min(target, this.cruiseV * Math.exp(1.15 * dt) + 300 * dt);
+    const spool = 1.15 * (1 + Math.log10(boost) * 0.9);
+    if (this.cruiseV < target) this.cruiseV = Math.min(target, this.cruiseV * Math.exp(spool * dt) + 300 * dt);
     else this.cruiseV = target + (this.cruiseV - target) * Math.exp(-5 * dt);
     this.cruiseV = Math.min(this.cruiseV, cap);
     this.cruiseCap = cap;

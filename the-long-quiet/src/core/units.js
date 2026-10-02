@@ -37,6 +37,7 @@ export function fmtSpeed(v) {
   const a = Math.abs(v);
   if (a < 1000) return `${a.toFixed(a < 10 ? 1 : 0)} m/s`;
   if (a < 0.01 * C) return `${(a / 1000).toFixed(a < 1e4 ? 2 : 1)} km/s`;
+  if (a >= 1e4 * C) return `${Math.round(a / C).toLocaleString('en-US')} c`;
   return `${(a / C).toFixed(a < 10 * C ? 2 : a < 100 * C ? 1 : 0)} c`;
 }
 

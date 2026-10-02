@@ -38,6 +38,7 @@ Progress saves automatically in the browser (localStorage).
 | Camera | C, mouse wheel to zoom, right-drag to look around |
 | Time compression (landed) | , and . |
 | Help / pause | H / Esc |
+| Cheats menu / speed boost | ` or F2 / = and - |
 
 ### Flying, briefly
 
@@ -46,6 +47,16 @@ Cruise drive speed scales with your distance to the nearest surface. Point at a 
 Watch your speed in air: the cruise governor keeps you to a survivable entry, but flight mode will let you dive as hard as you like.
 
 To refuel, skim close to a star or through a gas giant's upper atmosphere, and keep an eye on your heat. The drive is limited to 15 ly per jump; the galaxy map can plot a route through stars you can refuel at.
+
+### Cheats
+
+Press **`** (backquote) or **F2**, or pick Cheats from the pause menu. Cheat settings are saved with your other settings.
+
+- **Speed boost**, ×10 up to ×100,000. Raises the cruise drive's ceiling from 2,400 c to as much as 240 million c, and gives flight mode enough thrust to reach a large fraction of light speed. Change it in flight with **=** and **-**. The drive still stops you short of any surface, but air at boosted speeds will burn you up.
+- **Jump anywhere.** No 15 ly limit and no mass lock.
+- **Fast jumps.** The jump sequence runs four times faster.
+- **Infinite fuel.**
+- **Invincible.** No heat, pressure, tidal or impact damage. The event horizon of a black hole still wins.
 
 ## Building
 
