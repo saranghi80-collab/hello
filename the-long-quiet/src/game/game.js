@@ -10,6 +10,8 @@ import { Universe, TRAIL_LENGTH } from '../world/universe.js';
 import { distLy, SOL_POS } from '../world/galaxy.js';
 import { bodyVelocity, qRotate, qConj, qMul, TYPE_LABEL } from '../world/system.js';
 import { Ship, vec, quat } from './ship.js';
+import { airAt, safeEntrySpeed, entryHeating } from './atmo.js';
+import { AirParticles, Fireball } from '../render/effects.js';
 import { JumpDrive } from './jump.js';
 import { Input } from '../core/input.js';
 import { AudioSystem } from '../audio/audio.js';
@@ -27,6 +29,8 @@ const SETTINGS_KEY = 'the-long-quiet/settings';
 const MAX_JUMP = 15; // ly, drive limit
 const LY_PER_TANK = 30;
 const WARPS = [1, 10, 100, 1000, 10000];
+const NO_AIR = { rho: 0, P: 0, T: 0, light: 1, depth: 0, gas: false };
+const SHIP_MASS = 40000;
 
 function lumNorm(c) {
   const y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -48,6 +52,12 @@ export class Game {
     this.ship = new Ship();
     this.shipModel = new ShipModel();
     this.engine.scene.add(this.shipModel.group);
+    this.air = NO_AIR;
+    this.airParticles = new AirParticles();
+    this.engine.scene.add(this.airParticles.points);
+    this.fireball = new Fireball(this.engine.scene);
+    this.lightning = 0;
+    this.timeDilation = 1;
     this.setupLights();
     this.state = 'boot';
     this.time = 0;
@@ -178,6 +188,7 @@ export class Game {
       this.hud.note(`${this.star.name}. ${this.sys.bodies.length} bodies, unresolved.`);
       setTimeout(() => this.hud.note('Press Space to pulse-scan the system.', 'good', 10), 2500);
       this.objective = 'scan';
+      this.noteBlackHole(16000);
       this.saveGame();
     });
   }
@@ -195,6 +206,18 @@ export class Game {
     this.fadeIn = 1;
     this.engine.post.fade = 1;
     this.hud.note(`${this.star.name} · ${calendar(this.homeYears)} at home`);
+    this.noteBlackHole(6000);
+  }
+
+  noteBlackHole(delay) {
+    const e = this.universe.erebus;
+    if (!e || this.bhNoted) return;
+    setTimeout(() => {
+      if (this.state !== 'play') return;
+      this.bhNoted = true;
+      const d = distLy(e.pos, this.star.pos);
+      this.hud.note(`Gravimetry: something massive and dark, ${d.toFixed(1)} ly away. Marked on the galaxy map: Erebus.`, 'good', 12);
+    }, delay);
   }
 
   toTitle() {
@@ -276,7 +299,7 @@ export class Game {
     const L = Math.max(target.lum, 1e-3);
     const R = target.radius * 6.957e8;
     let D = clamp(Math.sqrt(L) * 0.32 * AU, R * 45, 3 * AU);
-    if (target.kind === 'blackhole') D = 0.4 * AU;
+    if (target.kind === 'blackhole') D = Math.max(0.4 * AU, Math.sqrt((6.674e-11 * target.mass * 1.989e30) / 9));
     if (target.kind === 'neutron') D = 0.05 * AU;
     this.arrivalDistance = D;
     this.enterSystem(target);
@@ -493,14 +516,16 @@ export class Game {
     if (this.state === 'play' || this.state === 'intro') {
       this.time += simDt;
       if (!this.jump.active) {
-        this.homeYears += simDt / YEAR;
+        // near a black hole, home's clocks run faster than yours
+        this.homeYears += (simDt * Math.min(this.timeDilation || 1, 40)) / YEAR;
         this.shipYears += simDt / YEAR;
       }
-    } else {
+    } else if (this.state !== 'horizon') {
       this.time += dt * 20;
     }
     this.view.computeKinematics(this.time);
     if (this.state === 'play') this.updateShip(dt, simDt);
+    else if (this.state === 'horizon') this.updateHorizon(dt);
     else this.idleShip(dt);
     this.updateCamera(dt);
     this.render(dt);
@@ -565,7 +590,8 @@ export class Game {
     const ship = this.ship;
     if (ship.mode === 'cruise') {
       ship.mode = 'flight';
-      ship.v = vec.scl(ship.forward, Math.min(ship.cruiseV, 300));
+      // in open space the drive brakes for you; in air you keep what you had
+      ship.v = vec.scl(ship.forward, Math.min(ship.cruiseV, this.air.rho > 1e-7 ? 9000 : 300));
       ship.throttle = Math.min(ship.throttle, 0.4);
       this.audio.disengage();
       this.hud.note('Cruise drive disengaged', 'info', 3);
@@ -665,6 +691,8 @@ export class Game {
     ship.measureGround(world, this.heightAt);
     ship.gearReady = this.shipModel.gear > 0.85;
     ship.bottom = this.shipModel.bottom;
+    this.air = ship.frame >= 0 ? airAt(this.sys.bodies[ship.frame], ship.alt) : NO_AIR;
+    ship.air = this.air;
     let jumpLevel = 0;
 
     if (this.jump.active) {
@@ -689,19 +717,23 @@ export class Game {
       ship.steer(dt, input, freeLook && ship.mode !== 'landed' ? (input.buttons & 2) !== 0 : false);
       if (ship.mode === 'cruise') {
         const near = this.nearestSurface(this._shipWorld);
-        ship.updateCruise(dt, near);
-        if (near < 1500 || (ship.frame >= 0 && ship.alt < 1500)) {
-          ship.mode = 'flight';
-          ship.v = vec.scl(ship.forward, Math.min(ship.cruiseV, 250));
-          ship.throttle = 0.3;
-          this.audio.disengage();
-          this.hud.note('Cruise drive disengaged: proximity', 'warn', 4);
+        // the drive governor holds speed down in air so entry heating stays survivable
+        const airLimit = this.air.rho > 1e-9 ? safeEntrySpeed(this.air.rho) * 0.8 : Infinity;
+        ship.updateCruise(dt, near, airLimit);
+        const fb = ship.frame >= 0 ? this.sys.bodies[ship.frame] : null;
+        const rBH = this.sys.star.starKind === 'blackhole' ? vec.len(this._shipWorld) / this.sys.star.radius : Infinity;
+        if (near < 1500 || (fb && fb.solid && ship.alt < 1500)) {
+          this.dropCruise(Math.min(ship.cruiseV, this.air.rho > 1e-6 ? 2000 : 250), 'Cruise drive disengaged: proximity');
+        } else if (fb && !fb.solid && this.air.P > 0.4e5) {
+          this.dropCruise(Math.min(ship.cruiseV, 900), `Cruise drive disengaged: the air of ${fb.name} is too dense`);
+        } else if (rBH < 3) {
+          this.dropCruise(ship.cruiseV, 'Cruise drive failure: spacetime is too steep this close to the hole');
         }
-        // skimming a gas giant's atmosphere in cruise is not allowed
       } else if (ship.mode === 'flight') {
         const steps = simDt > 0.05 ? Math.ceil(simDt / 0.05) : 1;
         for (let s = 0; s < steps; s++) {
           ship.updateFlight(simDt / steps, input, world, this.heightAt);
+          this.impactSpeed = vec.len(ship.v);
           const hit = ship.collide(world, this.heightAt);
           if (hit) this.handleContact(hit);
           if (ship.mode !== 'flight') break;
@@ -721,6 +753,16 @@ export class Game {
     if (this.saveTimer > 45 && !this.jump.active) { this.saveTimer = 0; this.saveGame(); }
     if (this.warpIndex && !(ship.mode === 'landed' || (ship.mode === 'flight' && vec.len(ship.v) < 1))) this.warpIndex = 0;
     this.jumpLevel = jumpLevel;
+  }
+
+  dropCruise(speed, note) {
+    const ship = this.ship;
+    ship.mode = 'flight';
+    ship.v = vec.scl(ship.forward, speed);
+    ship.throttle = Math.min(ship.throttle, 0.3);
+    this.autopilot = false;
+    this.audio.disengage();
+    this.hud.note(note, 'warn', 5);
   }
 
   runAutopilot(dt) {
@@ -795,59 +837,165 @@ export class Game {
         this.hud.note(hit.damage > 0.1 ? 'Hull impact!' : 'Hull scraped', 'warn', 3);
         if (!ship.gearReady && hit.impact < 6) this.hud.note('Lower the landing gear (G) to set down.', 'warn', 4);
       }
-      if (ship.hull <= 0) this.die('The hull gave way on impact.');
+      if (hit.impact > 70 || ship.hull <= 0) this.crash(hit);
     }
-    if (hit.type === 'gas') {
-      // handled by environment()
-    }
+  }
+
+  crash(hit) {
+    const ship = this.ship;
+    const b = this.sys.bodies[ship.frame];
+    const v = Math.max(this.impactSpeed || 0, hit.impact || 0);
+    const E = 0.5 * SHIP_MASS * v * v;
+    const tnt = E / 4.184e9;
+    const crater = Math.max(3, 9 * Math.cbrt(Math.max(tnt, 0.001)));
+    const water = b.oceans && ship.groundH <= 0.5;
+    const tntStr = tnt >= 1 ? `${tnt.toFixed(tnt < 10 ? 1 : 0)} tonnes` : `${Math.round(tnt * 1000)} kilograms`;
+    const eStr = E > 1e9 ? `${(E / 1e9).toFixed(1)} gigajoules` : `${(E / 1e6).toFixed(0)} megajoules`;
+    let msg;
+    if (water) msg = `Hit the ocean of ${b.name} at ${fmtSpeed(v)}. At that speed water is as hard as stone.`;
+    else if (v < 70) msg = `The hull gave way against the ground of ${b.name}.`;
+    else msg = `Struck ${b.name} at ${fmtSpeed(v)}. The impact released ${eStr}, about ${tntStr} of TNT, and left a crater perhaps ${Math.round(crater)} metres across.`;
+    if (v > 40) this.fireball.start(this._shipWorld, Math.max(20, crater * 1.4));
+    this.shake = 2;
+    this.die(msg);
   }
 
   environment(simDt, dt) {
     const ship = this.ship;
     const P = this._shipWorld;
     const sys = this.sys;
+    const star = sys.star;
     const rStar = Math.hypot(P[0], P[1], P[2]);
     const E = this.view.irradianceAt(P);
-    let heatIn = 1.7e-5 * E;
+    const R = star.radius;
+    const bh = star.starKind === 'blackhole';
+    let heatIn = bh ? 0 : 1.7e-5 * E;
     let scoop = 0;
-    const R = sys.star.radius;
-    if (sys.star.starKind !== 'blackhole' && rStar < R * 6 && this.star.scoopable && ship.mode !== 'jump') {
+    let cause = 'star';
+    if (!bh && rStar < R * 6 && this.star.scoopable && ship.mode !== 'jump') {
       scoop = 0.22 * Math.min(4, (2 * R / rStar) ** 2);
       heatIn += scoop * 0.05;
     }
-    if (rStar < R * 1.02 && sys.star.starKind !== 'blackhole') this.die(`Flew into ${sys.star.name}.`);
-    if (sys.star.starKind === 'blackhole' && rStar < R * 3) this.die('Crossed the event horizon. Nothing you know of comes back.');
+    if (!bh && rStar < R * 1.02) {
+      this.die(`Flew into ${star.name}. The hull was gone long before it reached the photosphere; what was left of it became part of the star.`);
+      return;
+    }
     const b = ship.frame >= 0 ? sys.bodies[ship.frame] : null;
+    const air = this.air;
     let windDensity = 0;
-    if (b) {
-      if (!b.solid && b.atmosphere && ship.alt < b.atmosphere.top) {
-        const depth = (b.atmosphere.top - ship.alt) / b.atmosphere.top;
-        if (ship.alt > b.atmosphere.top * 0.3 && ship.speed < 3000) scoop = Math.max(scoop, 0.02 * depth);
-        windDensity = Math.min(1, depth * 1.5);
-        if (ship.alt < 0) {
-          ship.hull -= simDt * 0.03 * (1 + (-ship.alt / 5000));
-          heatIn += 0.03;
-          if (ship.hull <= 0) this.die(`Crushed in the depths of ${b.name}.`);
-        }
+    this.plasma = 0;
+    this.pressureStress = 0;
+    if (b && air.rho > 0) {
+      windDensity = Math.min(1, Math.sqrt(air.rho / 1.2));
+      // entry heating: shock-heated air in front of the hull
+      const vAir = ship.mode === 'landed' ? 0 : ship.speed;
+      const flux = entryHeating(air.rho, vAir);
+      this.plasma = flux / 0.035;
+      if (flux > 1.7e-5 * E) cause = 'entry';
+      heatIn += flux;
+      // the air itself: hot gas below the cloud tops, greenhouse ovens
+      if (air.T > 450) {
+        const hot = (air.T - 450) / 1000 * Math.min(1, air.rho) * 0.05;
+        heatIn += hot;
+        if (hot > flux) cause = 'air';
       }
-      if (b.solid && b.atmosphere) {
-        const dens = Math.exp(-Math.max(ship.alt, 0) / b.atmosphere.H) * Math.min(1, b.pressure);
-        windDensity = Math.min(1, dens * 1.2);
-        if (b.type === 'venus' && ship.alt < 30000) heatIn += 0.03 * (1 - ship.alt / 30000);
+      // gas giant scooping in the thin upper layers
+      if (!b.solid && air.P > 2e3 && air.P < 0.8e5 && ship.speed < 3000) scoop = Math.max(scoop, 0.03);
+      // pressure: the hull is rated to 30 bar
+      const bars = air.P / 1e5;
+      if (bars > 30) {
+        this.pressureStress = Math.min(1, (bars - 30) / 200);
+        this.harm((bars / 30 - 1) * 0.012 * simDt, 'pressure');
       }
-      if (b.solid && b.type === 'lava' && ship.alt < 2000) heatIn += 0.012 * (1 - ship.alt / 2000);
+    }
+    if (b && b.solid && b.type === 'venus' && ship.alt < 30000) { heatIn += 0.03 * (1 - ship.alt / 30000); cause = 'air'; }
+    if (b && b.solid && b.type === 'lava' && ship.alt < 2000) { heatIn += 0.012 * (1 - ship.alt / 2000); cause = 'ground'; }
+    // compact objects: tides and time
+    const Rs = (2 * 6.674e-11 * star.mass) / (C * C);
+    this.timeDilation = rStar > Rs * 1.0005 ? 1 / Math.sqrt(1 - Rs / rStar) : 40;
+    this.tidal = 0;
+    if (bh || star.starKind === 'neutron') {
+      this.tidal = (2 * 6.674e-11 * star.mass * 30) / (rStar * rStar * rStar);
+      if (this.tidal > 40) this.harm(((this.tidal - 40) / 600) * simDt, 'tidal');
+      if (this.tidal > 3000) { this.die(this.deathText('tidal')); return; }
+      if (bh && rStar < R && this.state === 'play') { this.enterHorizon(); return; }
     }
     ship.heat += (heatIn - 0.075 * ship.heat) * simDt;
     ship.heat = Math.max(0, ship.heat);
-    if (ship.heat > 1) {
-      ship.hull -= (ship.heat - 1) * 0.06 * simDt;
-      if (ship.hull <= 0) this.die('Overheated. The radiators could not shed it fast enough.');
-    }
+    this.heatCause = cause;
+    if (ship.heat > 1) this.harm((ship.heat - 1) * 0.06 * simDt, 'heat');
     if (scoop > 0) ship.fuel = Math.min(1, ship.fuel + scoop * simDt * 0.5);
     this.scooping = scoop > 0.001 && ship.fuel < 0.999;
-    // slow field repairs while landed
     if (ship.mode === 'landed' && ship.hull < 1) ship.hull = Math.min(1, ship.hull + simDt / 3600 * 0.25);
     this.windDensity = windDensity;
+  }
+
+  harm(amount, kind) {
+    const ship = this.ship;
+    if (amount <= 0 || this.state !== 'play') return;
+    ship.hull -= amount;
+    if (amount > 0.002) this.shake = Math.min(1.2, (this.shake || 0) + amount * 4);
+    if (ship.hull <= 0) this.die(this.deathText(kind));
+  }
+
+  deathText(kind) {
+    const ship = this.ship;
+    const star = this.sys.star;
+    const b = ship.frame >= 0 ? this.sys.bodies[ship.frame] : null;
+    const air = this.air;
+    const P = this._shipWorld;
+    const rStar = Math.hypot(P[0], P[1], P[2]);
+    if (kind === 'heat') kind = this.heatCause === 'entry' ? 'entry' : this.heatCause === 'air' ? 'hotair' : this.heatCause === 'ground' ? 'ground' : 'starheat';
+    switch (kind) {
+      case 'pressure':
+        return `The hull gave way at ${Math.round(air.P / 1e5)} bar, ${fmtDistance(air.depth)} below the cloud tops of ${b.name}. It was ${Math.round(air.T)} K outside and completely dark. The wreck will keep sinking for days, until the pressure turns it into something that is no longer quite metal.`;
+      case 'entry':
+        return `Entry heating at ${fmtSpeed(ship.speed)} overwhelmed the hull ${fmtDistance(Math.max(0, ship.alt))} above ${b ? b.name : 'the surface'}. From the ground it would have looked like a falling star.`;
+      case 'hotair':
+        return `Outside it was ${Math.round(air.T)} K, and the radiators had nothing cooler to shed the heat into. ${b ? b.name : 'The planet'} cooked the TERN slowly, from the outside in.`;
+      case 'ground':
+        return `The ground of ${b.name} was molten a few metres down. The TERN's hull reached the same temperature.`;
+      case 'tidal':
+        return `Torn apart by tides ${fmtDistance(rStar - star.radius)} from ${star.name}: the pull on the nose was ${Math.round(this.tidal).toLocaleString('en-US')} m/s² stronger than on the tail. Nothing built by people could have held together.`;
+      case 'starheat':
+      default:
+        return `The light of ${star.name} did what nothing else out here could. ${fmtDistance(Math.max(0, rStar - star.radius))} above its surface, the hull softened and failed.`;
+    }
+  }
+
+  // Past the event horizon there is no outward direction left. The ship has a fraction of
+  // a second of its own time before the singularity, stretched here so it can be seen.
+  enterHorizon() {
+    if (this.state !== 'play') return;
+    this.state = 'horizon';
+    this.horizonT = 0;
+    this.autopilot = false;
+    this.input.releaseLock();
+    const star = this.sys.star;
+    const tau = (Math.PI * 6.674e-11 * star.mass) / (C * C * C);
+    this.horizonTau = tau;
+    this.audio.thud(0.25);
+    this.horizonFrom = this.homeYears;
+  }
+
+  updateHorizon(dt) {
+    this.horizonT += dt;
+    const p = Math.min(1, this.horizonT / 9);
+    this.horizonP = p;
+    this.shake = 0.4 + p * 1.5;
+    // the ship swings round to look back the way it came: what is left of the universe
+    // is behind you now
+    const ship = this.ship;
+    const F = ship.frameState(this.world);
+    const out = qRotate(qConj(F.q), vec.nrm(this._shipWorld));
+    const turn = quat.qFromTo(qRotate(ship.q, [0, 0, -1]), out);
+    const rate = 1.4 * Math.min(1, this.horizonT / 1.2);
+    ship.q = quat.qNormalize(quat.qSlerp(ship.q, qMul(turn, ship.q), 1 - Math.exp(-dt * rate)));
+    if (p >= 1 && this.state === 'horizon') {
+      const star = this.sys.star;
+      this.state = 'play';
+      this.die(`You crossed the event horizon of ${star.name}. From inside, every direction leads to the same place, and the singularity came ${this.horizonTau < 1 ? this.horizonTau.toFixed(2) : this.horizonTau.toFixed(1)} seconds later by your clock. Outside, it will never happen. To anyone watching, the TERN hangs at the edge forever, reddening and dimming, until there is nothing left to see.`);
+    }
   }
 
   die(cause) {
@@ -1054,7 +1202,7 @@ export class Game {
     if (this.state === 'title') this.freeYaw += dt * 0.02;
     const look = qMul([0, Math.sin(this.freeYaw / 2), 0, Math.cos(this.freeYaw / 2)], [Math.sin(-this.freePitch / 2), 0, 0, Math.cos(-this.freePitch / 2)]);
     let camLocal, camQ;
-    const chase = this.camMode === 'chase' || this.state !== 'play';
+    const chase = this.state === 'horizon' ? false : this.camMode === 'chase' || this.state !== 'play';
     if (chase) {
       const stiff = ship.mode === 'cruise' ? 7 : 5;
       this.camQ = quat.qSlerp(this.camQ, ship.q, 1 - Math.exp(-dt * stiff));
@@ -1118,6 +1266,12 @@ export class Game {
       pxRatio: eng.pixelRatio,
       frustum,
       spot: { pos: vec.sub(lampW, cw), dir: lampDir, on: ship.lights, intensity: 3000 / this.exposure, cos: Math.cos(0.42) },
+      air: this.air,
+      exposure: this.exposure,
+      lightning: this.lightning,
+      lightningDir: this.lightningDir,
+      inside: this.state === 'horizon' ? 0.02 + 0.98 * Math.pow(this.horizonP || 0, 1.6) : 0,
+      camFwd: new THREE.Vector3(0, 0, -1).applyQuaternion(eng.camera.quaternion),
     };
     ctx.extraGlints = this.signalView.update(ctx, this.time, cw, this.exposure);
     this.view.update(ctx);
@@ -1128,6 +1282,13 @@ export class Game {
     sm.group.visible = this.camMode === 'chase' || this.state !== 'play';
     const solW = vec.nrm(vec.sub(SOL_POS, this.star.pos));
     const solLocal = qRotate(qConj(shipQ), solW);
+    // shock-heated air streaming past the hull
+    const Fq = ship.frameState(world).q;
+    const vlen = vec.len(ship.v);
+    const flowLocal = vlen > 1 ? qRotate(qConj(ship.q), vec.scl(ship.v, -1 / vlen)) : null;
+    sm.setPlasma(this.time, this.state === 'play' ? this.plasma || 0 : 0, flowLocal, this.exposure * 1.6);
+    this.updateAirFx(dt, Fq, ctx);
+    this.fireball.update(dt, cw, this.exposure);
     sm.animate(this.time, dt, {
       gear: ship.gearDown || ship.mode === 'landed' ? 1 : 0,
       thrust: ship.mode === 'jump' ? 0 : ship.thrust, jumpGlow: ship.mode === 'jump' ? Math.min(1, (this.jumpLevel || 0) * 1.5) : 0,
@@ -1152,6 +1313,8 @@ export class Game {
       const toSun = vec.nrm(vec.scl(shipW, -1));
       lit *= clamp(vec.dot(up, toSun) * 6 + 0.3, 0, 1);
     }
+    // inside thick air the sun is dimmed or gone
+    lit *= Math.max(this.air.light ?? 1, 0);
     this.shipLit = lit;
     const toSun = vec.nrm(vec.scl(shipW, -1));
     const shipRel = sm.group.position;
@@ -1187,18 +1350,13 @@ export class Game {
     }
     eng.sky.step();
     // black hole lensing
-    if (this.nearBH) {
-      const d = distLy(this.nearBH.pos, this.star.pos);
-      const dir = this.nearBH.pos.map((v, k) => (v - this.star.pos[k]) / d);
-      const rs = this.nearBH.radius * 6.957e8;
-      eng.sky.uniforms.uBH.value.set(dir[0], dir[1], dir[2], Math.min(0.02, (rs / (d * LY)) * 4e7));
-    } else if (this.sys.star.starKind === 'blackhole') {
+    if (this.sys.star.starKind === 'blackhole') {
       const rel = vec.scl(cw, -1);
       const d = vec.len(rel);
       eng.sky.uniforms.uBH.value.set(rel[0] / d, rel[1] / d, rel[2] / d, this.sys.star.radius / d);
     } else eng.sky.uniforms.uBH.value.set(0, 0, 0, 0);
     // exposure: meter for sunlit surfaces at the camera's distance from the star, with shadow
-    const Ecam = Math.max(this.view.irradianceAt(cw) * Math.max(lit, 0.02), 0.0015);
+    const Ecam = Math.max(this.view.irradianceAt(cw) * Math.max(lit, 0.02) * Math.max(this.air.light ?? 1, 0.01), 0.0015);
     const target = (0.2 * Math.PI) / (0.3 * Ecam);
     this.exposure = Math.exp(Math.log(this.exposure) + (Math.log(target) - Math.log(this.exposure)) * (1 - Math.exp(-dt * 1.2)));
     eng.post.exposure = this.exposure;
@@ -1217,14 +1375,47 @@ export class Game {
       thrust: ship.thrust, cruise: ship.mode === 'cruise', speed: ship.speed || 0, windDensity: this.windDensity || 0,
       airSpeed: ship.mode === 'landed' ? 15 : ship.speed || 0, scoop: this.scooping ? 1 : 0, heat: ship.heat,
       jump: this.jumpLevel || 0, music: this.state !== 'boot', musicDrone: true, rcs: false,
+      plasma: this.state === 'play' ? this.plasma || 0 : 0, pressure: this.state === 'play' ? this.pressureStress || 0 : 0,
     });
+  }
+
+  // Wisps of cloud and air streaming past, lightning deep inside gas giants.
+  updateAirFx(dt, Fq, ctx) {
+    const ship = this.ship;
+    const air = this.air;
+    const b = ship.frame >= 0 ? this.sys.bodies[ship.frame] : null;
+    let intensity = 0;
+    let color = [1, 1, 1];
+    const E = this.view.irradianceAt(this._shipWorld || [1, 0, 0]);
+    if (b && air.rho > 1e-5 && this.state === 'play') {
+      const inside = air.gas && air.depth > 0;
+      intensity = inside ? 0.9 : Math.min(0.55, Math.sqrt(air.rho) * 0.5) * (ship.speed > 20 ? 1 : 0.35);
+      const tint = b.solid ? (b.type === 'venus' ? [0.9, 0.75, 0.5] : b.type === 'titan' ? [0.85, 0.55, 0.3] : b.type === 'desert' ? [0.8, 0.6, 0.45] : [0.75, 0.8, 0.9])
+        : b.gas.palette[1];
+      const lit = (E * Math.max(air.light, 0.002) * 0.6) / Math.PI;
+      color = tint.map((c) => c * lit);
+      if (this.lightning > 0) color = color.map((c, k) => c + tint[k] * this.lightning * 0.6);
+      // embers when the air is burning around the hull
+      if (this.plasma > 0.5) color = color.map((c, k) => c + [1, 0.4, 0.12][k] * Math.min(3, this.plasma) * 0.3 / this.exposure);
+    }
+    const flow = qRotate(Fq, vec.scl(ship.v, -1));
+    this.airParticles.update(dt, flow, intensity, color, this.engine.pixelRatio);
+    // lightning in the water-cloud decks of giants
+    this.lightning *= Math.exp(-dt * 7);
+    if (b && air.gas && air.P > 2e5 && air.P < 8e6 && this.state === 'play' && Math.random() < dt * 0.35) {
+      this.lightning = (1.5 + Math.random() * 3) / this.exposure;
+      const up = vec.nrm(vec.sub(this._shipWorld, this.view.positions[b.index]));
+      const r = [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5];
+      this.lightningDir = vec.nrm(vec.add(vec.scl(up, -0.6), r));
+      setTimeout(() => this.audio.thunder?.(), 300 + Math.random() * 2500);
+    }
   }
 
   drawHud(dt) {
     const ship = this.ship;
     const hud = this.hud;
-    hud.visible = this.state === 'play';
-    if (this.state !== 'play') { hud.draw(dt, null); this.drawCockpitFrame(false); return; }
+    hud.visible = this.state === 'play' || this.state === 'horizon';
+    if (!hud.visible) { hud.draw(dt, null); this.drawCockpitFrame(false); return; }
     const cw = this.camWorld;
     const shipW = this._shipWorld;
     const shipQ = ship.worldQ(this.world);
@@ -1287,6 +1478,23 @@ export class Game {
     if (ship.heat > 0.85) { centerText = 'HEAT CRITICAL'; centerSub = 'Move away from the heat source'; centerColor = '#e0674c'; }
     else if (this.centerMsg) { centerText = this.centerMsg; this.centerMsg = null; }
     if (ship.mode === 'flight' && ship.frame >= 0 && ship.canHover === false && ship.alt < 20000) { centerText = 'GRAVITY EXCEEDS LIFT'; centerSub = 'This world is too heavy to hover over'; centerColor = '#e3a54b'; }
+    const air = this.air;
+    const bars = air.P / 1e5;
+    if ((this.plasma || 0) > 1.2) { centerText = 'ENTRY HEATING'; centerSub = `${fmtSpeed(ship.speed)} through the air · slow down or climb`; centerColor = '#e3a54b'; }
+    if (bars > 30) { centerText = `HULL PRESSURE ${Math.round(bars)} BAR`; centerSub = 'Rated to 30 bar · climb (R) while you still can'; centerColor = '#e0674c'; }
+    if (this.sys.star.starKind === 'blackhole' && ship.mode === 'flight' && (ship.gmag || 0) > 30) {
+      const r = vec.len(this._shipWorld) / this.sys.star.radius;
+      centerText = `FALLING TOWARD ${this.sys.star.name.toUpperCase()}`;
+      centerSub = r > 3 ? 'Gravity exceeds thrust · Tab to engage the cruise drive' : 'No drive can hold this close';
+      centerColor = '#e0674c';
+    }
+    if ((this.tidal || 0) > 20) { centerText = `TIDAL STRESS ${Math.round(this.tidal)} M/S²`; centerSub = 'The nose is pulled harder than the tail'; centerColor = '#e0674c'; }
+    if (this.state === 'horizon') {
+      const left = Math.max(0, this.horizonTau * (1 - (this.horizonP || 0)));
+      centerText = 'EVENT HORIZON CROSSED';
+      centerSub = `Singularity in ${left.toFixed(2)} s ship time · at home, forever`;
+      centerColor = '#e0674c';
+    }
     const range = this.jumpRange();
     let jumpLine = null, jumpOk = false;
     if (this.jumpTarget) {
@@ -1319,7 +1527,10 @@ export class Game {
       systemSub: `${st.spectral}${this.star.scoopable ? '' : ' · no scoop'}  ·  ${this.sys.bodies.length} bodies${this.scanned ? '' : ' · unscanned'}`,
       timeLine: `ABOARD ${Math.floor(this.shipYears)} YR ${Math.floor((this.shipYears % 1) * 365)} D  ·  HOME ${calendar(this.homeYears)}`,
       objective: this.objectiveText(),
-      homeLine: `SOL ${solD.toFixed(1)} LY`,
+      homeLine: `SOL ${solD.toFixed(1)} LY${(this.timeDilation || 1) > 1.02 ? `  ·  TIME AT HOME ×${(this.timeDilation).toFixed(this.timeDilation < 10 ? 2 : 0)}` : ''}`,
+      airLine: air.rho > 1e-6 ? `${bars >= 0.1 ? `${bars.toFixed(bars < 10 ? 2 : 0)} bar` : `${(bars * 1000).toFixed(bars < 0.01 ? 2 : 0)} mbar`} · ${Math.round(air.T)} K` : null,
+      altLabel: air.gas && air.depth > 0 ? 'DEPTH' : 'ALT',
+      depth: air.gas ? air.depth : 0,
       jumpLine, jumpOk,
       labels, target, skyMarkers, hint, centerText, centerSub, centerColor,
       jump: this.jump.active ? this.jump.hudInfo() : null,
@@ -1376,6 +1587,7 @@ export class Game {
       jumps: this.jumps,
       life: [...this.lifeFound],
       own: this.ownBeacons,
+      bhNoted: !!this.bhNoted,
     };
     if (s.mode === 'cruise') data.ship.v = vec.scl(s.forward, Math.min(s.cruiseV, 200));
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* storage unavailable */ }
@@ -1414,6 +1626,7 @@ export class Game {
     this.jumps = d.jumps || 0;
     this.lifeFound = new Set(d.life || []);
     this.ownBeacons = d.own || [];
+    this.bhNoted = !!d.bhNoted;
     this.pendingPlacement = { kind: 'saved', ...d.ship };
   }
 }

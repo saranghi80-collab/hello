@@ -3,7 +3,7 @@
 
 import { Rng, hash32 } from '../core/rng.js';
 import { G, AU, R_SUN, M_SUN, R_EARTH, M_EARTH, R_JUP, M_JUP, DAY, clamp } from '../core/units.js';
-import { hexToLinear, mixRGB, scaleRGB } from '../core/color.js';
+import { hexToLinear, mixRGB, scaleRGB, blackbodyRGB } from '../core/color.js';
 import { planetLetter, moonNumeral } from './names.js';
 
 const TAU = Math.PI * 2;
@@ -119,14 +119,16 @@ function atmosphere(kind, P, g, T, r) {
 
 // ---------- system ----------
 function starPhysical(star) {
+  const bh = star.kind === 'blackhole';
   return {
     kind: 'star',
     name: star.name,
-    radius: star.kind === 'blackhole' ? star.radius * R_SUN : star.radius * R_SUN,
+    radius: star.radius * R_SUN,
     mass: star.mass * M_SUN,
-    lum: star.lum,
-    temp: star.temp,
-    color: star.color,
+    // a black hole's only light is its accretion disk
+    lum: bh ? star.diskLum || 0.002 : star.lum,
+    temp: bh ? 6000 : star.temp,
+    color: bh ? blackbodyRGB(5200) : star.color,
     starKind: star.kind,
     spectral: star.spectral,
   };

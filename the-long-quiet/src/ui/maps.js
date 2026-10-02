@@ -183,6 +183,11 @@ export class Maps {
       }
       c.fillStyle = s.kind === 'blackhole' ? 'rgba(180,140,255,0.9)' : rgbStr(s.color, inRange ? 0.95 : 0.45, 1);
       c.beginPath(); c.arc(p.x, p.y, size, 0, Math.PI * 2); c.fill();
+      if (s.kind === 'blackhole') {
+        c.strokeStyle = 'rgba(180,140,255,0.8)';
+        c.beginPath(); c.arc(p.x, p.y, size + 6, 0, Math.PI * 2); c.stroke();
+        if (d < 40) this.label(c, `BLACK HOLE · ${s.name.toUpperCase()}`, p.x + 12, p.y - 8, 9, 'rgba(190,160,255,0.9)');
+      }
       if (g.visited.has(s.id)) {
         c.strokeStyle = INK + '0.45)';
         c.beginPath(); c.arc(p.x, p.y, size + 3, 0, Math.PI * 2); c.stroke();
@@ -342,6 +347,7 @@ export class Maps {
           </dl>
           ${trail ? '<p class="good">A survey beacon is broadcasting from this system.</p>' : ''}
           ${s.id === 'SOL' ? '<p class="dim">Home.</p>' : ''}
+          ${s.kind === 'blackhole' ? '<p class="warn">A black hole. There is no star to scoop here, and time near it runs slow: every hour close to the horizon is many at home. Fall in, and nothing comes back.</p>' : ''}
           <p class="dim small">${ok ? 'Close the map, then press J to begin the jump.' : d > 15 ? 'Too far for one jump. Plot a route through stars on the way.' : 'Not enough fuel for this jump. Skim a star or a gas giant first.'}</p>
           ${d > 15 ? '<button class="link primary" id="btn-route">Plot route</button>' : ''}
           ${g.route && g.route.dest.id === s.id ? `<p class="good small">Route plotted: ${g.route.path.length} jumps. Press J at each star.</p>` : ''}`;

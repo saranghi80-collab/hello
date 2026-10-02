@@ -265,7 +265,8 @@ export class AudioSystem {
     this.cruF.frequency.setTargetAtTime(120 + c * 600, t, 0.4);
     this.cruToneG.gain.setTargetAtTime(s.cruise ? 0.03 + c * 0.03 : 0, t, 0.5);
     const wind = Math.min(1, s.windDensity * (0.15 + Math.min(s.airSpeed / 300, 1.5)));
-    this.windG.gain.setTargetAtTime(wind * 0.16, t, 0.5);
+    const roar = Math.min(1, (s.plasma || 0) / 3);
+    this.windG.gain.setTargetAtTime(Math.max(wind * 0.16, roar * 0.3), t, 0.3);
     this.windF.frequency.setTargetAtTime(250 + 500 * Math.min(s.airSpeed / 300, 1) + 150 * Math.sin(t * 0.37) * Math.sin(t * 0.13), t, 0.3);
     this.scoopG.gain.setTargetAtTime(s.scoop * 0.18 + Math.max(0, s.heat - 0.6) * 0.1, t, 0.3);
     this.scoopF.frequency.setTargetAtTime(300 + s.scoop * 900, t, 0.3);
@@ -274,6 +275,11 @@ export class AudioSystem {
     this.jmpF.frequency.setTargetAtTime(200 + s.jump * 1600, t, 0.3);
     this.roomG.gain.setTargetAtTime(0.035, t, 1);
     this.droneG.gain.setTargetAtTime(s.musicDrone ? 0.012 : 0, t, 3);
+    // the hull groaning under pressure
+    if ((s.pressure || 0) > 0 && t - (this.groanT || 0) > 1.5 + Math.random() * 3) {
+      this.groanT = t;
+      this.sweep(60 + Math.random() * 50, 28, 2.2, 0.04 + 0.09 * s.pressure, 'sawtooth');
+    }
     if (s.heat > 0.85 && t - this.alarmT > 1.2) {
       this.alarmT = t;
       this.tone(880, 0.08, 0.04, 'square'); this.tone(660, 0.08, 0.04, 'square', 0.14);
@@ -338,6 +344,17 @@ export class AudioSystem {
     this.tone(320, 0.12, 0.05, 'triangle', dur);
   }
 
+  thunder() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = this.brownBuf;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 220;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.5);
+    src.connect(f).connect(g).connect(this.sfx);
+    src.start(t, Math.random() * 2); src.stop(t + 3.6);
+  }
   blip() { this.tone(1760, 0.06, 0.025); }
   select() { this.tone(1320, 0.05, 0.02); this.tone(1980, 0.08, 0.018, 'sine', 0.05); }
   deny() { this.tone(220, 0.15, 0.04, 'triangle'); }

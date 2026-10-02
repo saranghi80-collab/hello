@@ -74,6 +74,22 @@ export class Universe {
       });
     }
     this.special.set('SOL', { build: buildSol, noRandomSignals: true });
+
+    // Erebus: an intermediate-mass black hole within one jump of the start. Massive
+    // enough that its tides are gentle at the horizon, so a ship can actually fall in.
+    const used = new Set(trail.map((t) => t.id));
+    const away = norm(sub(start.pos, trail[1].pos));
+    const bhCands = g.starsInRadius(start.pos, 13.5)
+      .filter((c) => c.d > 8 && c.star.id !== 'SOL' && !used.has(c.star.id))
+      .sort((a, b) => {
+        const da = dot(norm(sub(a.star.pos, start.pos)), away), db = dot(norm(sub(b.star.pos, start.pos)), away);
+        return db - da;
+      });
+    if (bhCands.length) {
+      const e = g.forceStar(bhCands[0].star.id, { classDef: g.classDef('X', 'blackhole'), u: 0.5, name: 'Erebus', mass: 60000, diskLum: 0.6 });
+      this.erebus = e;
+      this.special.set(e.id, { build: buildErebus, noRandomSignals: true });
+    }
   }
 
   trailIndex(starId) {
@@ -95,6 +111,7 @@ function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
 function scale(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
 function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
 function addPlanet(sys, h, rr, body, aAU, name) {
   body.kind = 'planet';
@@ -210,4 +227,14 @@ function buildSol(sys, rr, h) {
   const nep = gas(true, 0.352, 0.054, 30.07, 'Neptune', ['#3f6fc4', '#5a86d4', '#2d58a8', '#7ea2e0']);
   addMoon(sys, h, rr, nep, h.makeSolid(sys, rr, 'ice', 1.3534e6, 0.0036 * M_EARTH, 38), 3.548e8, 'Triton');
   sys.home = true;
+}
+
+function buildErebus(sys, rr, h) {
+  // Only far out is the pull gentle enough for slow orbits: a frozen ice giant with a moon,
+  // which is also the only fuel for the way back, and a small airless world beyond it.
+  const T = 30;
+  const giant = addPlanet(sys, h, rr, h.makeGas(rr, true, R_EARTH * 3.9, 17 * M_EARTH, T), 42, 'Erebus b');
+  giant.rings = { inner: giant.radius * 1.5, outer: giant.radius * 2.1, seed: 9177, color: hexToLinear('#5a5a5e'), opacity: 0.3 };
+  addMoon(sys, h, rr, giant, h.makeSolid(sys, rr, 'ice', 1.2e6, 0.008 * M_EARTH, T), giant.radius * 6, 'Erebus b I');
+  addPlanet(sys, h, rr, h.makeSolid(sys, rr, 'barren', 2.2e6, 0.04 * M_EARTH, T), 74, 'Erebus c');
 }

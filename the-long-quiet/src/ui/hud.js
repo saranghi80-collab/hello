@@ -199,8 +199,10 @@ export class Hud {
     this.text('THROTTLE', bx, by - 42 + 26, { size: 9, color: INK + '0.45)', spacing: 0.2 });
     this.text(`${Math.round(s.throttle * 100)}%`, bx + tw, by - 42 + 26, { size: 9, align: 'right', color: INK + '0.6)' });
     if (isFinite(s.alt) && s.alt < 2e6) {
-      this.text('ALT', bx + 190, by - 92, { size: 10, color: INK + '0.5)', spacing: 0.24 });
-      this.text(fmtDistance(Math.max(0, s.alt)), bx + 190, by - 66, { size: 16 });
+      const deep = s.altLabel === 'DEPTH';
+      this.text(s.altLabel || 'ALT', bx + 190, by - 92, { size: 10, color: deep ? WARN : INK + '0.5)', spacing: 0.24 });
+      this.text(fmtDistance(deep ? s.depth : Math.max(0, s.alt)), bx + 190, by - 66, { size: 16 });
+      if (s.airLine) this.text(s.airLine.toUpperCase(), bx + 330, by - 66, { size: 10, color: INK + '0.6)' });
       if (s.mode === 'flight' && s.alt < 50000) this.text(`${s.vs >= 0 ? '+' : ''}${s.vs.toFixed(1)} m/s`, bx + 190, by - 50, { size: 10, color: s.vs < -8 && s.alt < 300 ? WARN : INK + '0.55)' });
     }
     if (s.gear) this.text(s.gearLabel, bx + 190, by - 30, { size: 9, color: s.gearWarn ? WARN : INK + '0.5)', spacing: 0.18 });

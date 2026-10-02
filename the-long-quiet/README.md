@@ -14,6 +14,8 @@ A lonely, full-scale space exploration game for the browser. You are Surveyor El
 - **Relativistic jumps.** The drive doesn't go faster than light. It pushes the ship to within a hair of light speed, and the starfield crowds forward under aberration and Doppler shift. A few weeks pass aboard and decades pass at home.
 - **Messages from home that travel at light speed.** Each one arrives only when light from Sol could have caught up with you. The farther out you go, the slower they come.
 - **Ilse Marrow's beacons.** Surveyor Seven went out decades before you and left a trail of beacons. You can follow them to the end of her route, or ignore them.
+- **What happens if you fly into things.** Air has real density, so drag and entry heating follow your speed: come in fast and a plasma sheath wraps the hull, too fast and you burn up. Gas giants have no surface; below the cloud tops it gets dark, hot and crushing, with lightning in the murk, until the hull gives way somewhere past 100 bar. Hitting the ground at speed releases the energy it should, and flying into a star ends the way you would expect.
+- **Erebus, a black hole you can reach.** A 60,000 solar mass hole about 13 ly from the start, with a ray-traced accretion disk, gravitational lensing, Doppler beaming and a photon ring. Near it the tides pull, your clock runs slow against home, and no drive can hold you inside three Schwarzschild radii. You can cross the horizon if you want to.
 - **Things left behind.** Derelict probes, wrecks, and very occasionally a structure no human built.
 - **Generative sound.** A slow ambient score, ship hum, wind on worlds that have air. All of it is synthesised in the browser.
 
@@ -40,6 +42,8 @@ Progress saves automatically in the browser (localStorage).
 ### Flying, briefly
 
 Cruise drive speed scales with your distance to the nearest surface. Point at a world and the ship slows itself on approach, from a thousand times light speed in open space to a few kilometres per second near the ground. Drop to flight mode, lower the gear and descend slowly to land.
+
+Watch your speed in air: the cruise governor keeps you to a survivable entry, but flight mode will let you dive as hard as you like.
 
 To refuel, skim close to a star or through a gas giant's upper atmosphere, and keep an eye on your heat. The drive is limited to 15 ly per jump; the galaxy map can plot a route through stars you can refuel at.
 

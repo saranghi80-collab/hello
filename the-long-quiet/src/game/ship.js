@@ -9,6 +9,7 @@
 // trips take a minute and you can never crash at cruise speed.
 
 import { G, C, clamp } from '../core/units.js';
+import { SHIP_DRAG_K } from './atmo.js';
 import { qMul, qRotate, qConj, qAxis, bodyVelocity, bodyAngularVelocity } from '../world/system.js';
 
 const ID = [0, 0, 0, 1];
@@ -252,18 +253,23 @@ export class Ship {
     }
     const gmag = len(gvec);
     const alt = this.alt;
-    let vmax = clamp(60 + (isFinite(alt) ? alt : 1e9) * 0.35, 60, 2500);
-    if (b && b.atmosphere && alt < b.atmosphere.top) vmax = Math.min(vmax, 120 + alt * 0.05 + 400 / Math.max(b.atmosphere.P || 1, 0.1));
+    // speed limits that keep ground flying manageable; a gas giant has no ground
+    const groundAlt = b && b.solid ? alt : 1e9;
+    const vmax = clamp(60 + (isFinite(groundAlt) ? groundAlt : 1e9) * 0.35, 60, 2500);
+    // aerodynamic drag against the air, which turns with the planet
+    const rho = this.air ? this.air.rho : 0;
+    const vlen = len(this.v);
+    const aDrag = rho > 0 ? scl(this.v, -SHIP_DRAG_K * rho * vlen) : [0, 0, 0];
     const strafe = [0, 0, 0];
     if (input.down('KeyQ')) strafe[0] -= 1;
     if (input.down('KeyE')) strafe[0] += 1;
-    if (input.down('KeyR') || input.down('Space') && false) strafe[1] += 1;
+    if (input.down('KeyR')) strafe[1] += 1;
     if (input.down('KeyF')) strafe[1] -= 1;
-    const sv = clamp(15 + (isFinite(alt) ? alt : 1e4) * 0.05, 15, 80);
+    const sv = clamp(15 + (isFinite(groundAlt) ? groundAlt : 1e4) * 0.05, 15, 80);
     const vCmdBody = [strafe[0] * sv, strafe[1] * sv * 0.8, -this.throttle * vmax];
     const vCmd = qRotate(this.q, vCmdBody);
     const tau = 0.9;
-    const aReq = sub(scl(sub(vCmd, this.v), 1 / tau), gvec);
+    const aReq = sub(sub(scl(sub(vCmd, this.v), 1 / tau), gvec), aDrag);
     const ab = qRotate(qConj(this.q), aReq);
     const lim = { fwd: 34, back: 16, lat: 12, up: 26, down: 12 };
     ab[0] = clamp(ab[0], -lim.lat, lim.lat);
@@ -271,14 +277,18 @@ export class Ship {
     ab[2] = clamp(ab[2], -lim.fwd, lim.back);
     this.thrust = clamp(Math.max(-ab[2], 0) / lim.fwd + Math.abs(ab[1]) / lim.up * 0.25, 0, 1);
     const a = add(qRotate(this.q, ab), gvec);
-    this.v = add(this.v, scl(a, dt));
+    // drag applied semi-implicitly so it stays stable in very dense air
+    this.v = scl(add(this.v, scl(a, dt)), 1 / (1 + SHIP_DRAG_K * rho * vlen * dt));
+    const sp = len(this.v);
+    if (sp > 0.995 * C) this.v = scl(this.v, (0.995 * C) / sp);
     this.p = add(this.p, scl(this.v, dt));
     this.gmag = gmag;
+    this.dragG = len(aDrag) / 9.81;
     this.canHover = lim.up > gmag * 1.02;
   }
 
-  updateCruise(dt, nearest) {
-    const cap = clamp(0.38 * nearest, 400, 2400 * C);
+  updateCruise(dt, nearest, airLimit = Infinity) {
+    const cap = Math.min(clamp(0.38 * nearest, 400, 2400 * C), airLimit);
     const target = this.throttle * cap;
     if (this.cruiseV < target) this.cruiseV = Math.min(target, this.cruiseV * Math.exp(1.15 * dt) + 300 * dt);
     else this.cruiseV = target + (this.cruiseV - target) * Math.exp(-5 * dt);

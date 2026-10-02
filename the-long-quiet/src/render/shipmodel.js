@@ -298,6 +298,85 @@ export class ShipModel {
     this.lampLens.position.set(0, -2.15, -11.56); this.lampLens.rotation.y = Math.PI;
     this.group.add(this.lampLens);
     this.lampPos = new THREE.Vector3(0, -2.15, -11.6);
+    this.buildPlasma();
+  }
+
+  // Shock-heated air during atmospheric entry: a parabolic bow shock standing a few metres
+  // ahead of the hull, brightest at the stagnation point, trailing into a long wake.
+  buildPlasma() {
+    const L = 48;
+    this.plasmaLen = L;
+    this.plasmaMat = new THREE.ShaderMaterial({
+      uniforms: { uI: { value: 0 }, uT: { value: 0 }, uHot: { value: 0 }, uL: { value: L } },
+      vertexShader: `#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vP; varying vec3 vN; varying vec3 vV;
+void main() {
+  vP = position; vN = normalize(normalMatrix * normal);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz;
+  gl_Position = projectionMatrix * mv;
+  #include <logdepthbuf_vertex>
+}`,
+      fragmentShader: `#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform float uI; uniform float uT; uniform float uHot; uniform float uL;
+varying vec3 vP; varying vec3 vN; varying vec3 vV;
+float h(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5); }
+float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+void main() {
+  #include <logdepthbuf_fragment>
+  float t = clamp(vP.z / uL, 0.0, 1.0);
+  float a = atan(vP.y, vP.x);
+  float facing = abs(dot(normalize(vN), normalize(vV)));
+  float rim = pow(1.0 - facing, 1.2) * (1.0 - pow(1.0 - facing, 8.0));
+  float cap = exp(-t * 6.5);
+  // long thin streaks running with the flow
+  float sa = a * 1.9099;
+  float st = n2(vec2(sa * 2.0, t * 1.6 - uT * 3.5)) * 0.6 + n2(vec2(sa * 5.0, t * 3.5 - uT * 6.0)) * 0.4;
+  float streak = smoothstep(0.42, 0.9, st);
+  float sides = streak * (1.0 - t) * (0.25 + rim) * 0.7;
+  float end = 1.0 - smoothstep(0.55, 1.0, t);
+  float flick = 0.9 + 0.1 * sin(uT * 53.0 + sa * 3.0 + t * 20.0);
+  float k = (cap * (1.5 + 1.0 * rim) + sides) * end * flick;
+  vec3 cool = vec3(1.0, 0.28, 0.06), warm = vec3(1.0, 0.55, 0.22), hot = vec3(0.95, 0.62, 1.0);
+  vec3 c = mix(mix(cool, warm, clamp(uHot * 2.0, 0.0, 1.0)), hot, clamp(uHot * 2.0 - 1.0, 0.0, 1.0));
+  // white-hot right at the stagnation point
+  c = mix(c, vec3(1.0, 0.95, 0.88), cap * cap * 0.7);
+  gl_FragColor = vec4(c * k * uI, 1.0);
+}`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    });
+    const pts = [];
+    for (let i = 0; i <= 40; i++) {
+      const z = Math.pow(i / 40, 1.8) * L;
+      pts.push(new THREE.Vector2(2.6 * Math.sqrt(z + 0.6), z));
+    }
+    const g = new THREE.LatheGeometry(pts, 48);
+    g.rotateX(Math.PI / 2); // lathe axis +Y -> +Z (downstream)
+    this.plasma = new THREE.Mesh(g, this.plasmaMat);
+    this.plasma.position.z = -20; // the shock stands off a few metres ahead of the nose
+    this.plasma.visible = false;
+    this.plasma.castShadow = false;
+    this.plasma.receiveShadow = false;
+    this.plasma.frustumCulled = false;
+    this.plasmaPivot = new THREE.Group();
+    this.plasmaPivot.add(this.plasma);
+    this.group.add(this.plasmaPivot);
+  }
+
+  // level: entry heating (0 none, ~1 visible, 5+ fierce); flowLocal: direction the air
+  // streams past the ship, in ship coordinates
+  setPlasma(t, level, flowLocal, expo) {
+    const on = level > 0.05 && flowLocal;
+    this.plasma.visible = !!on;
+    if (!on) return;
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(flowLocal[0], flowLocal[1], flowLocal[2]));
+    this.plasmaPivot.quaternion.copy(q);
+    this.plasmaMat.uniforms.uI.value = Math.min(8, Math.sqrt(level) * 1.6) * 1.8 / Math.max(expo, 1e-6);
+    this.plasmaMat.uniforms.uT.value = t;
+    this.plasmaMat.uniforms.uHot.value = Math.min(1, level / 8);
   }
 
   // gear: 0 stowed .. 1 deployed; thrust 0..1; heat 0..1+

@@ -106,7 +106,6 @@ export class StarRenderer {
     this.group.add(this.corona);
     // radiance such that irradiance at distance d is lum * (AU/d)^2
     this.radiance = (Math.max(star.lum, 1e-6) * AU * AU) / (Math.PI * star.radius * star.radius);
-    if (star.starKind === 'blackhole') this.buildAccretion();
     if (star.starKind === 'neutron') this.buildPulsar();
   }
 
@@ -279,15 +278,18 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * wp;
   #include <logdepthbuf_vertex>
 }`;
-const GAS_FRAG = `${LOGF}
+const GAS_FRAG = `#include <common>
+#include <logdepthbuf_pars_fragment>
 uniform vec3 uP0; uniform vec3 uP1; uniform vec3 uP2; uniform vec3 uP3; uniform vec3 uP4;
 uniform float uBands; uniform float uTurb; uniform float uStorms; uniform float uSeed; uniform float uTime; uniform float uGlow;
 uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uSunLocal; uniform vec3 uFillDir; uniform vec3 uFillColor;
 uniform float uHasRings; uniform float uDist; uniform float uProj; uniform float uR; uniform vec4 uSpot;
+uniform vec3 uCenterRel; uniform mat3 uToBody; uniform vec3 uCamFwd;
 varying vec3 vObj; varying vec3 vN; varying vec3 vW;
 ${NOISE}
 ${ECLIPSE}
 ${RING_GLSL}
+${VIEW_RAY}
 vec3 bandColor(float b) {
   // alternate light zones and darker belts, each with its own tint
   float i = floor(b);
@@ -299,8 +301,24 @@ vec3 bandColor(float b) {
   return mix(c0, c1, smoothstep(0.2, 0.8, t));
 }
 void main() {
-  #include <logdepthbuf_fragment>
-  vec3 p = normalize(vObj);
+  // The mesh is only a proxy; the cloud tops are found by intersecting the true sphere,
+  // so they stay smooth and correct even a few kilometres above them.
+  vec3 rd = viewRay();
+  vec3 ro = -uCenterRel / uR;
+  float tc = -dot(ro, rd);
+  vec3 pc = ro + rd * tc;
+  float h2 = dot(pc, pc);
+  if (h2 > 1.0) discard;
+  float th = tc - sqrt(1.0 - h2);
+  if (th <= 0.0) discard;
+  vec3 hitW = rd * th * uR;
+  vec3 nW = normalize(hitW - uCenterRel);
+  #if defined( USE_LOGDEPTHBUF )
+    gl_FragDepth = log2(1.0 + th * uR * dot(rd, uCamFwd)) * logDepthBufFC * 0.5;
+  #endif
+  vec3 vNh = nW;
+  vec3 vWh = hitW;
+  vec3 p = uToBody * nW;
   float lat = p.y;
   // differential rotation: the bands slide past each other
   float shear = uTime * 1.2e-4 * sin(lat * uBands * 1.3 + uSeed);
@@ -336,13 +354,13 @@ void main() {
     col = mix(col, uP3 * 1.02, ring * 0.5 * uSpot.w);
     col = mix(col, vec3(0.62, 0.3, 0.18) * (0.9 + 0.2 * sw), st * uSpot.w);
   }
-  vec3 N = normalize(vN);
-  vec3 V = normalize(-vW);
+  vec3 N = vNh;
+  vec3 V = -rd;
   float NdL = dot(N, uSunDir);
   float mu = max(dot(N, V), 0.0);
   float diff = smoothstep(-0.08, 0.3, NdL) * (0.6 * max(NdL, 0.0) + 0.4 * smoothstep(-0.05, 0.4, NdL));
   float limb = 0.75 + 0.25 * pow(mu, 0.4);
-  float sh = eclipse(vW, uSunDir);
+  float sh = eclipse(vWh, uSunDir);
   if (uHasRings > 0.5 && abs(uSunLocal.y) > 1e-4) {
     float t = -p.y / uSunLocal.y;
     if (t > 0.0) {
@@ -505,6 +523,215 @@ class CloudLayer {
   }
 }
 
+
+// ---------------------------------------------------------------- gas giant interior
+// Below the cloud tops there is nothing to see but the gas itself: daylight diffusing down
+// through the decks and dying with depth, lightning in the water clouds, and far down,
+// the gas beginning to glow with its own heat.
+const INTERIOR_FRAG = `${LOGF}
+uniform vec3 iUp; uniform vec3 iSunDir; uniform vec3 iSunColor; uniform vec3 iHaze;
+uniform float iLight; uniform float iTauUp; uniform float iFlash; uniform vec3 iFlashDir; uniform float iThermal;
+uniform vec3 iLampDir; uniform float iLamp;
+varying vec3 vW;
+${VIEW_RAY}
+void main() {
+  #include <logdepthbuf_fragment>
+  vec3 rd = viewRay();
+  float mu = dot(rd, iUp);
+  float alpha = mu > 0.0 ? 1.0 - exp(-iTauUp / max(mu, 0.03)) : 1.0;
+  float glow = iLight * (0.2 + 0.8 * smoothstep(-0.6, 1.0, mu));
+  vec3 col = iHaze * iSunColor * glow / 3.14159;
+  col += iSunColor * pow(max(dot(rd, iSunDir), 0.0), 6.0) * iLight * 0.12;
+  col += iHaze * iFlash * (0.25 + 0.75 * pow(max(dot(rd, iFlashDir), 0.0), 3.0));
+  col += vec3(1.0, 0.33, 0.1) * iThermal * (0.55 + 0.45 * (1.0 - mu));
+  // the floodlight lights up the gas in front of the ship
+  float beam = max(dot(rd, iLampDir), 0.0);
+  col += iHaze * iLamp * (pow(beam, 24.0) * 1.2 + pow(beam, 4.0) * 0.15);
+  gl_FragColor = vec4(col * alpha, alpha);
+}`;
+
+class GasInterior {
+  constructor(body) {
+    this.body = body;
+    this.uniforms = {
+      iUp: { value: new THREE.Vector3(0, 1, 0) }, iSunDir: { value: new THREE.Vector3() }, iSunColor: { value: new THREE.Vector3() },
+      iHaze: { value: new THREE.Vector3(0.8, 0.7, 0.6) }, iLight: { value: 1 }, iTauUp: { value: 0 }, iFlash: { value: 0 },
+      iFlashDir: { value: new THREE.Vector3(0, -1, 0) }, iThermal: { value: 0 },
+      iLampDir: { value: new THREE.Vector3(0, 0, -1) }, iLamp: { value: 0 },
+      ...CAMERA_UNIFORMS,
+    };
+    this.mat = new THREE.ShaderMaterial({
+      vertexShader: ATMO_VERT, fragmentShader: INTERIOR_FRAG, uniforms: this.uniforms, transparent: true, depthWrite: false,
+      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, side: THREE.BackSide,
+    });
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(body.radius * 1.0004, 96, 48), this.mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 1.5;
+    this.mesh.visible = false;
+  }
+}
+
+// ---------------------------------------------------------------- black hole
+// Light paths are integrated through Schwarzschild spacetime per pixel, in units of the
+// Schwarzschild radius: x'' = -3/2 h^2 x / r^5, with h = |x cross x'| conserved. Rays that
+// cross the disk pick up its light (Doppler-beamed and gravitationally redshifted), rays
+// that fall below r = 1 are lost, and the rest sample the sky in the direction they leave.
+const BH_FRAG = `${LOGF}
+uniform vec3 bCenter;
+uniform mat3 bToDisk;
+uniform float bRb;
+uniform float bIn;
+uniform float bOut;
+uniform float bEmit;
+uniform float bTime;
+uniform float bSkyI;
+uniform float bInside;
+uniform samplerCube tSky;
+varying vec3 vW;
+${VIEW_RAY}
+float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hh(i), hh(i + vec2(1.0, 0.0)), f.x), mix(hh(i + vec2(0.0, 1.0)), hh(i + vec2(1.0, 1.0)), f.x), f.y); }
+vec3 ramp(float t) {
+  vec3 c0 = vec3(0.35, 0.05, 0.01), c1 = vec3(1.0, 0.28, 0.06), c2 = vec3(1.0, 0.62, 0.28), c3 = vec3(1.0, 0.93, 0.82), c4 = vec3(0.72, 0.84, 1.0);
+  if (t < 0.5) return mix(c0, c1, t / 0.5);
+  if (t < 1.0) return mix(c1, c2, (t - 0.5) / 0.5);
+  if (t < 1.6) return mix(c2, c3, (t - 1.0) / 0.6);
+  return mix(c3, c4, clamp((t - 1.6) / 1.0, 0.0, 1.0));
+}
+vec3 sky(vec3 dDisk) { return textureLod(tSky, transpose(bToDisk) * dDisk, 0.0).rgb * bSkyI; }
+// cheap point stars for the squeezed sky seen from inside (the cube holds only the glow)
+vec3 pointStars(vec3 d) {
+  vec3 p = d * 160.0;
+  vec3 i = floor(p);
+  vec3 f = fract(p) - 0.5;
+  float h = fract(sin(dot(i, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  float s = step(0.975, h) * exp(-dot(f, f) * 40.0) * (h - 0.975) * 40.0;
+  return s * mix(vec3(1.0, 0.82, 0.66), vec3(0.72, 0.84, 1.0), fract(h * 91.7));
+}
+void main() {
+  #include <logdepthbuf_fragment>
+  vec3 rd = bToDisk * viewRay();
+  vec3 ro = bToDisk * (-bCenter);
+  if (bInside > 0.0) {
+    // Inside the horizon every path leads inward. Behind you, the outside universe
+    // shrinks to a bright, blueshifted circle as the singularity approaches.
+    vec3 outw = normalize(ro);
+    float a = acos(clamp(dot(rd, outw), -1.0, 1.0));
+    float halfA = mix(1.3, 0.015, bInside);
+    float m = smoothstep(halfA, halfA * 0.92, a);
+    vec3 perp = rd - outw * dot(rd, outw);
+    float pl = length(perp);
+    float sa = min(a / halfA, 1.0) * 1.5707963;
+    vec3 sd = pl > 1e-5 ? normalize(outw * cos(sa) + perp / pl * sin(sa)) : outw;
+    vec3 col = (sky(sd) * (3.0 + 40.0 * bInside * bInside) + pointStars(sd) * bEmit * (0.25 + bInside)) * m;
+    col *= mix(vec3(1.0), vec3(0.75, 0.9, 1.25), bInside);
+    col += vec3(1.0, 0.4, 0.15) * bEmit * 0.6 * exp(-pow((a - halfA) / (halfA * 0.08 + 0.004), 2.0));
+    gl_FragColor = vec4(min(col, vec3(6e4)), 1.0);
+    return;
+  }
+  vec3 pos = ro;
+  float camR = length(ro);
+  if (camR > bRb) {
+    float tc = -dot(ro, rd);
+    vec3 pc = ro + rd * tc;
+    float h2c = dot(pc, pc);
+    if (h2c > bRb * bRb) { gl_FragColor = vec4(sky(rd), 1.0); return; }
+    pos = ro + rd * max(tc - sqrt(bRb * bRb - h2c), 0.0);
+  }
+  vec3 vel = rd;
+  vec3 hv = cross(pos, vel);
+  float h2 = dot(hv, hv);
+  vec3 col = vec3(0.0);
+  float trans = 1.0;
+  bool lost = false;
+  for (int i = 0; i < 260; i++) {
+    float r2 = dot(pos, pos);
+    float r = sqrt(r2);
+    if (r < 1.0) { lost = true; break; }
+    if (r > bRb * 1.02 && dot(pos, vel) > 0.0) break;
+    float dt = clamp(0.07 * (r - 0.9), 0.012, 2.5);
+    vec3 acc = -1.5 * h2 * pos / (r2 * r2 * r);
+    vec3 pm = pos + vel * (0.5 * dt);
+    vec3 vm = vel + acc * (0.5 * dt);
+    float rm2 = dot(pm, pm);
+    vec3 accm = -1.5 * h2 * pm / (rm2 * rm2 * sqrt(rm2));
+    vec3 np = pos + vm * dt;
+    vec3 nv = vel + accm * dt;
+    if (pos.y * np.y < 0.0) {
+      float f = pos.y / (pos.y - np.y);
+      vec3 hp = mix(pos, np, f);
+      float rr = length(hp.xz);
+      if (rr > bIn && rr < bOut) {
+        float x = bIn / rr;
+        float prof = pow(x, 0.75) * pow(max(1.0 - sqrt(x), 0.0), 0.25) * 2.4;
+        float beta = min(sqrt(0.5 / max(rr - 1.0, 0.2)), 0.75);
+        vec3 vdir = normalize(vec3(-hp.z, 0.0, hp.x));
+        vec3 toObs = -normalize(vm);
+        float gam = inversesqrt(1.0 - beta * beta);
+        float D = 1.0 / (gam * (1.0 - beta * dot(vdir, toObs)));
+        float g = D * sqrt(max(1.0 - 1.0 / rr, 0.02));
+        float phi = atan(hp.z, hp.x) + bTime * 1.2 * pow(rr, -1.5);
+        vec2 q = vec2(cos(phi), sin(phi)) * rr;
+        float n = 0.55 + 0.45 * vn(q * 1.1 + 3.0) * (0.6 + 0.4 * vn(q * 3.7 - 7.0));
+        float lanes = 0.75 + 0.25 * sin(rr * 5.0 + vn(q * 0.6) * 4.0);
+        float a = 0.92 * smoothstep(bIn, bIn * 1.12, rr) * smoothstep(bOut, bOut * 0.65, rr) * (0.55 + 0.45 * n);
+        vec3 em = ramp(prof * g) * pow(g, 3.0) * prof * prof * n * lanes * bEmit;
+        col += trans * a * em;
+        trans *= 1.0 - a;
+      }
+    }
+    pos = np; vel = nv;
+    if (trans < 0.01) break;
+  }
+  if (!lost) col += trans * sky(normalize(vel));
+  // stay inside half-float range: an Inf here becomes a black hole in the bloom
+  gl_FragColor = vec4(min(col, vec3(6e4)), 1.0);
+}`;
+
+export class BlackHoleRenderer {
+  constructor(star, skyTexture) {
+    this.star = star;
+    this.Rs = star.radius;
+    this.Rb = 60;
+    const n = new THREE.Vector3(0.28, 1, 0.42).normalize();
+    // disk frame: y is the disk normal
+    const x = new THREE.Vector3(1, 0, 0).sub(n.clone().multiplyScalar(n.x)).normalize();
+    const z = new THREE.Vector3().crossVectors(x, n);
+    const toDisk = new THREE.Matrix3().set(x.x, x.y, x.z, n.x, n.y, n.z, z.x, z.y, z.z);
+    this.diskNormal = [n.x, n.y, n.z];
+    this.uniforms = {
+      bCenter: { value: new THREE.Vector3() }, bToDisk: { value: toDisk }, bRb: { value: this.Rb },
+      bIn: { value: 3.0 }, bOut: { value: 22.0 }, bEmit: { value: 1 }, bTime: { value: 0 }, bSkyI: { value: 1 },
+      bInside: { value: 0 }, tSky: { value: skyTexture },
+      ...CAMERA_UNIFORMS,
+    };
+    this.mat = new THREE.ShaderMaterial({ vertexShader: ATMO_VERT, fragmentShader: BH_FRAG, uniforms: this.uniforms, side: THREE.FrontSide });
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(this.Rs * this.Rb, 96, 48), this.mat);
+    this.mesh.frustumCulled = false;
+    this.group = new THREE.Group();
+    this.group.add(this.mesh);
+  }
+
+  update(ctx, rel, dist, expo, inside) {
+    this.group.position.set(rel[0], rel[1], rel[2]);
+    const u = this.uniforms;
+    u.bCenter.value.set(rel[0] / this.Rs, rel[1] / this.Rs, rel[2] / this.Rs);
+    u.bEmit.value = 7 / Math.max(expo, 1e-9);
+    u.bTime.value = ctx.time * Math.min(1, 3e8 / this.Rs);
+    u.bInside.value = inside || 0;
+    // beyond the horizon the outside sky is all there is to look at: meter for it
+    u.bSkyI.value = inside > 0 ? 2 / Math.max(expo, 1e-9) : 1;
+    const within = dist < this.Rs * this.Rb * 1.001 || inside > 0;
+    this.mat.side = within ? THREE.BackSide : THREE.FrontSide;
+    const tiny = Math.atan((this.Rs * this.Rb) / dist) < ctx.pixelAngle * 3 && !inside;
+    this.mesh.visible = !tiny;
+    return tiny;
+  }
+
+  dispose() { this.mesh.geometry.dispose(); this.mat.dispose(); }
+}
+
 // ---------------------------------------------------------------- glints
 const GLINT_VERT = `${LOGV}
 attribute vec3 aCol;
@@ -594,11 +821,15 @@ export class PlanetRenderer {
           uOcc: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uOccCount: { value: 0 }, uSunAngR: { value: 0.005 },
           tRing: { value: null }, uInner: { value: 1 }, uOuter: { value: 1 }, uOpacity: { value: 0 },
           uSpot: { value: new THREE.Vector4(body.gas.seed % 6.28, -0.38, 0.11, body.type === 'gas' && body.gas.storms > 0.45 && body.tempK < 200 ? 1 : 0) },
+          uCenterRel: { value: new THREE.Vector3() }, uToBody: { value: new THREE.Matrix3() }, uCamFwd: { value: new THREE.Vector3(0, 0, -1) },
+          ...CAMERA_UNIFORMS,
         },
       });
-      this.sphere = new THREE.Mesh(new THREE.SphereGeometry(body.radius, 160, 96), this.material);
+      this.sphere = new THREE.Mesh(new THREE.SphereGeometry(body.radius * 1.02, 160, 96), this.material);
       this.sphere.frustumCulled = false;
       this.group.add(this.sphere);
+      this.interior = new GasInterior(body);
+      this.inertial.add(this.interior.mesh);
     }
     if (body.atmosphere) {
       this.atmo = new AtmosphereShell(body);
@@ -683,9 +914,39 @@ export class PlanetRenderer {
       }
       void tmp; void origin;
     } else {
+      const inner = this.interior;
+      const depth = b.radius - dist;
+      inner.mesh.visible = depth > 0;
+      if (depth > 0 && ctx.air) {
+        const iu = inner.uniforms;
+        const up = [-rel[0] / dist, -rel[1] / dist, -rel[2] / dist];
+        iu.iUp.value.set(up[0], up[1], up[2]);
+        iu.iSunDir.value.set(sunDir[0], sunDir[1], sunDir[2]);
+        iu.iSunColor.value.set(light.sun[0], light.sun[1], light.sun[2]);
+        iu.iLight.value = ctx.air.light;
+        iu.iTauUp.value = 4 * Math.max(ctx.air.P / 1e5 - 1, 0) + 0.02;
+        iu.iFlash.value = ctx.lightning || 0;
+        if (ctx.lightningDir) iu.iFlashDir.value.set(...ctx.lightningDir);
+        const T = ctx.air.T;
+        iu.iThermal.value = Math.max(0, Math.min(1, (T - 900) / 1600)) * 0.5 / Math.max(ctx.exposure, 1e-9);
+        iu.iLampDir.value.set(ctx.spot.dir[0], ctx.spot.dir[1], ctx.spot.dir[2]);
+        iu.iLamp.value = ctx.spot.on ? 0.25 / Math.max(ctx.exposure, 1e-9) : 0;
+        // tint of the cloud deck at this latitude
+        const lat = qRotate(qConj(b.spin.locked ? b.orbit.q : b.spin.tilt), up)[1];
+        const gp = b.gas.palette;
+        const band = 0.5 + 0.5 * Math.sin(lat * b.gas.bands * Math.PI * 0.5);
+        const deep = Math.min(1, depth / 60000);
+        const hz = gp[1].map((c, k) => (c * band + gp[0][k] * (1 - band)) * (1 - deep * 0.5) + gp[2 % gp.length][k] * deep * 0.5);
+        iu.iHaze.value.set(hz[0], hz[1], hz[2]);
+      }
       u.uTime.value = ctx.time;
       u.uDist.value = dist;
       u.uProj.value = ctx.projScale;
+      u.uCenterRel.value.set(rel[0], rel[1], rel[2]);
+      u.uToBody.value.setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion(q[0], q[1], q[2], q[3])).invert());
+      if (ctx.camFwd) u.uCamFwd.value.copy(ctx.camFwd);
+      this.material.side = dist < b.radius * 1.021 ? THREE.BackSide : THREE.FrontSide;
+      this.sphere.visible = dist > b.radius;
       const ls = qRotate(qConj(b.spin.locked ? b.orbit.q : b.spin.tilt), sunDir);
       u.uSunLocal.value.set(ls[0], ls[1], ls[2]);
     }
@@ -724,6 +985,7 @@ export class PlanetRenderer {
     this.material.dispose();
     if (this.atmo) { this.atmo.mesh.geometry.dispose(); this.atmo.mat.dispose(); }
     if (this.clouds) { this.clouds.mesh.geometry.dispose(); this.clouds.mat.dispose(); }
+    if (this.interior) { this.interior.mesh.geometry.dispose(); this.interior.mat.dispose(); }
     if (this.rings) { this.rings.mesh.geometry.dispose(); this.rings.mat.dispose(); this.rings.tex.dispose(); }
   }
 }
@@ -736,6 +998,10 @@ export class SystemView {
     this.root = new THREE.Group();
     this.star = new StarRenderer(sys.star);
     this.root.add(this.star.group);
+    if (sys.star.starKind === 'blackhole') {
+      this.blackHole = new BlackHoleRenderer(sys.star, engine.sky.cubeTarget.texture);
+      this.root.add(this.blackHole.group);
+    }
     this.planets = sys.bodies.map((b) => {
       const pr = new PlanetRenderer(b, sys);
       this.root.add(pr.group, pr.inertial);
@@ -753,7 +1019,9 @@ export class SystemView {
 
   // Irradiance (star colour, luminance-normalised) at a star-centred position.
   irradianceAt(p) {
-    const d2 = p[0] * p[0] + p[1] * p[1] + p[2] * p[2];
+    let d2 = p[0] * p[0] + p[1] * p[1] + p[2] * p[2];
+    // an accretion disk stops looking like a point source once you are among it
+    if (this.blackHole) d2 = Math.max(d2, (this.sys.star.radius * 20) ** 2);
     return (Math.max(this.sys.star.lum, 0) * AU * AU) / Math.max(d2, 1);
   }
 
@@ -778,6 +1046,13 @@ export class SystemView {
     if (starTiny && sys.star.starKind !== 'blackhole') {
       const E = this.irradianceAt(cam);
       this.glints.add(srel, sd, this.starColor.map((c) => c * E));
+    }
+    if (this.blackHole) {
+      const bhTiny = this.blackHole.update(ctx, srel, sd, ctx.exposure || 1, ctx.inside || 0);
+      if (bhTiny) {
+        const E = this.irradianceAt(cam);
+        this.glints.add(srel, sd, this.starColor.map((c) => c * E));
+      }
     }
     const sunAngRAt = (p) => Math.atan(sys.star.radius / Math.max(Math.hypot(p[0], p[1], p[2]), 1));
     for (let i = 0; i < sys.bodies.length; i++) {
@@ -830,6 +1105,7 @@ export class SystemView {
   dispose() {
     this.engine.scene.remove(this.root);
     this.star.dispose();
+    if (this.blackHole) this.blackHole.dispose();
     for (const p of this.planets) p.dispose();
     this.glints.points.geometry.dispose();
   }
