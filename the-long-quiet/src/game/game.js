@@ -220,6 +220,8 @@ export class Game {
     this.view.computeKinematics(this.time);
     this.signalView = new SignalView(this.engine.scene, this.sys, this.view.planets);
     this.target = null;
+    this.autopilot = false;
+    this.warpIndex = 0;
     this.scan = 0;
     // sky from here
     this.engine.sky.regenerate(star.pos, immediateSky);
@@ -457,7 +459,31 @@ export class Game {
     this.input.endFrame();
   }
 
+  // Watch the frame rate for the first stretch of play and step quality down once
+  // if this machine is struggling.
+  watchPerformance(dt) {
+    if (this.state !== 'play' || this.perfDone || this.settings.qualityLocked || window.__TLQ_TEST) return;
+    this.perf = this.perf || { t: 0, frames: 0, skip: 2 };
+    if (this.perf.skip > 0) { this.perf.skip -= dt; return; }
+    this.perf.t += dt; this.perf.frames++;
+    if (this.perf.t < 6) return;
+    const fps = this.perf.frames / this.perf.t;
+    this.perfDone = true;
+    const order = ['low', 'medium', 'high', 'ultra'];
+    const i = order.indexOf(this.settings.quality);
+    if (fps < 38 && i > 0) {
+      const next = order[Math.max(0, i - (fps < 22 ? 2 : 1))];
+      this.settings.quality = next;
+      this.applySettings();
+      document.getElementById('set-quality').value = next;
+      this.hud.note(`Render quality lowered to ${next} to keep things smooth. Change it in Settings.`, 'info', 8);
+      this.perfDone = false; this.perf = { t: 0, frames: 0, skip: 2 };
+      if (next === 'low') this.perfDone = true;
+    }
+  }
+
   step(dt) {
+    this.watchPerformance(dt);
     this._velCache = [];
     const input = this.input;
     input.enabled = this.state === 'play' && !this.maps.open && !this.panels.modalOpen;
@@ -653,6 +679,13 @@ export class Game {
       }
     } else {
       if (this.autopilot) this.runAutopilot(dt);
+      else if (this.faceTarget > 0) {
+        // after an autopilot arrival, swing the nose onto the target
+        this.faceTarget -= dt;
+        const ti = this.targetInfo();
+        if (ti) ship.turnToward(this.dirToFrame(vec.nrm(vec.sub(ti.worldPos, this._shipWorld))), dt, 0.9);
+        if (Math.hypot(input.stick.x, input.stick.y) > 0.2) this.faceTarget = 0;
+      }
       ship.steer(dt, input, freeLook && ship.mode !== 'landed' ? (input.buttons & 2) !== 0 : false);
       if (ship.mode === 'cruise') {
         const near = this.nearestSurface(this._shipWorld);
@@ -675,10 +708,11 @@ export class Game {
         }
       }
     }
-    ship.chooseFrame(world);
+    // the jump drive flies in the star's frame from start to finish
+    if (!this.jump.active || this.jump.phase === 'charge') ship.chooseFrame(world);
     this._shipWorld = ship.worldPos(world);
     ship.measureGround(world, this.heightAt);
-    ship.speed = ship.mode === 'cruise' ? ship.cruiseV : vec.len(ship.v);
+    ship.speed = this.jump.active ? this.jump.beta() * C : ship.mode === 'cruise' ? ship.cruiseV : vec.len(ship.v);
     if (ship.frame >= 0 && ship.mode === 'flight') ship.vertSpeed = vec.dot(ship.v, vec.nrm(ship.p));
     this.environment(simDt, dt);
     this.updateScan(dt);
@@ -696,7 +730,15 @@ export class Game {
     const P = this._shipWorld;
     let aim = info.worldPos;
     // steer around anything in the way, passing wide of rings
-    const obstacles = this.sys.bodies.map((b) => ({ pos: this.view.positions[b.index], clear: (b.rings ? b.rings.outer : b.radius) * 1.6 + 2e5, idx: b.index }));
+    // a wide berth around planets and their rings, narrowed to the planet itself when
+    // the target lies within that berth (a beacon beside its rings, say)
+    const obstacles = this.sys.bodies.map((b) => {
+      const pos = this.view.positions[b.index];
+      const soft = (b.rings ? b.rings.outer : b.radius) * 1.6 + 2e5;
+      const hard = b.radius * 1.2 + 5e4;
+      const inside = vec.len(vec.sub(info.worldPos, pos)) < soft;
+      return { pos, clear: inside ? hard : soft, idx: b.index };
+    });
     obstacles.push({ pos: [0, 0, 0], clear: this.sys.star.radius * 4, idx: -1 });
     for (let pass = 0; pass < 2; pass++) {
       const d = vec.sub(aim, P);
@@ -705,6 +747,7 @@ export class Game {
       let worst = null;
       for (const o of obstacles) {
         if (info.kind === 'body' && o.idx === info.body.index) continue;
+        if (vec.len(vec.sub(info.worldPos, o.pos)) < o.clear || info.surfaceDist < 30000) continue;
         const t = vec.dot(vec.sub(o.pos, P), u);
         if (t <= 0 || t >= L) continue;
         const closest = vec.add(P, vec.scl(u, t));
@@ -724,6 +767,7 @@ export class Game {
       if (ship.mode === 'cruise') this.toggleCruise();
       ship.throttle = 0;
       this.autopilot = false;
+      this.faceTarget = 6;
       this.hud.note(`Arrived at ${info.name}`, 'good', 5);
       return;
     }
@@ -849,7 +893,9 @@ export class Game {
     const rel = vec.sub(info.worldPos, this.camWorld);
     const camF = new THREE.Vector3(0, 0, -1).applyQuaternion(this.engine.camera.quaternion);
     const cosA = (rel[0] * camF.x + rel[1] * camF.y + rel[2] * camF.z) / vec.len(rel);
-    if (cosA < Math.cos(0.5)) { this.centerMsg = 'Bring the target into view to scan'; return; }
+    const toT = vec.nrm(vec.sub(info.worldPos, this._shipWorld));
+    const nose = qRotate(this.ship.worldQ(this.world), [0, 0, -1]);
+    if (cosA < Math.cos(0.75) && vec.dot(toT, nose) < Math.cos(0.75)) { this.centerMsg = 'Turn toward the target to scan'; return; }
     this.scan += dt / (info.kind === 'body' ? 2.6 : 2.0);
     if (this.scan >= 1) {
       this.scan = 0;

@@ -226,6 +226,7 @@ export class Panels {
     const s = g.settings;
     const q = $('set-quality'), inv = $('set-invert'), sens = $('set-sens'), vol = $('set-volume'), mus = $('set-music'), fov = $('set-fov');
     q.value = s.quality; inv.checked = s.invertY; sens.value = s.sensitivity; vol.value = s.volume; mus.value = s.music; fov.value = s.fov;
+    q.addEventListener('change', () => { s.qualityLocked = true; });
     const apply = () => {
       s.quality = q.value; s.invertY = inv.checked; s.sensitivity = Number(sens.value); s.volume = Number(vol.value); s.music = Number(mus.value); s.fov = Number(fov.value);
       g.applySettings();

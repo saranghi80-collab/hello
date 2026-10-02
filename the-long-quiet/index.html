@@ -82,15 +82,15 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 #intro .skip { position: fixed; bottom: 24px; right: 24px; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(232,228,218,0.35); }
 
 /* transmission */
-#transmission { position: fixed; left: 50%; bottom: max(96px, 11vh); transform: translateX(-50%); width: min(560px, calc(100% - 32px)); z-index: 15; }
+#transmission { position: fixed; right: max(16px, 3vw); bottom: 140px; width: min(460px, calc(100% - 32px)); z-index: 15; }
 #transmission .card { max-width: none; position: relative; border-left: 2px solid var(--sea); }
 #trans-title { margin: 4px 0 10px; font: 400 26px/1.1 var(--serif); }
-#trans-body { margin: 0; font: 400 18px/1.5 var(--serif); min-height: 3em; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+#trans-body { margin: 0; font: 400 18px/1.5 var(--serif); min-height: 3em; white-space: pre-wrap; max-height: 42vh; overflow: auto; }
 #trans-meta { margin: 12px 0 0; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); }
 #transmission .foot { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 
 /* survey card */
-#survey { position: fixed; right: max(16px, 3vw); top: 22vh; width: min(330px, calc(100% - 32px)); z-index: 14; }
+#survey { position: fixed; right: max(16px, 3vw); top: 12vh; width: min(330px, calc(100% - 32px)); z-index: 14; }
 #survey .card { position: relative; }
 #survey-name { margin: 2px 0 2px; font: 400 26px/1.1 var(--serif); }
 #survey-note { margin: 10px 0 0; font: 400 17px/1.45 var(--serif); color: var(--ink); }
@@ -152,7 +152,7 @@ input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
 #writer textarea { width: 100%; min-height: 140px; resize: vertical; background: rgba(0,0,0,0.4); color: var(--ink); border: 1px solid var(--ink-faint); padding: 12px; font: 400 18px/1.5 var(--serif); }
 #writer textarea:focus { outline: 1px solid var(--sea); }
 
-#nowebgl { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: 400 20px/1.5 var(--serif); }
+#nowebgl { position: fixed; inset: 0; z-index: 50; background: var(--void); display: grid; place-items: center; padding: 24px; text-align: center; font: 400 20px/1.5 var(--serif); }
 .focus-ring:focus-visible { outline: 1px solid var(--sea); }
 
 @media (max-width: 720px) {

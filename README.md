@@ -14,3 +14,9 @@ Open `index.html` in a browser. The 18-second loop runs in six beats:
 Controls: pause/play (or click the scene), replay, slow motion, synthesized sound effects (off by default), and a timeline for jumping to any beat. If the system asks for reduced motion, the page opens paused on the moon-get frame.
 
 Unofficial fan tribute, not affiliated with or endorsed by Nintendo.
+
+---
+
+# The Long Quiet
+
+A lonely, full-scale space exploration game, in [`the-long-quiet/`](the-long-quiet/). Open `the-long-quiet/index.html` in a desktop browser with WebGL 2. See its [README](the-long-quiet/README.md) for controls and details.
