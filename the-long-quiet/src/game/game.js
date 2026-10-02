@@ -308,8 +308,22 @@ export class Game {
     if (target.kind === 'neutron') D = 0.05 * AU;
     this.arrivalDistance = D;
     this.enterSystem(target);
+    this.arrivalPoint = vec.scl(dir, -D);
+    const near = this.universe.special.get(target.id)?.arriveNear;
+    const nb = near && this.sys.bodies.find((b) => b.name === near.body);
+    if (nb) {
+      // come in short of a particular body, on the side its star lights
+      this.view.computeKinematics(this.time);
+      const bp = this.view.positions[nb.index];
+      const toStar = vec.nrm(vec.scl(bp, -1));
+      const n = nb.rings ? qRotate(nb.spin.tilt, [0, 1, 0]) : toStar;
+      const nn = vec.dot(n, toStar) < 0 ? vec.scl(n, -1) : n;
+      let u = vec.scl(dir, -1);
+      u = vec.nrm(vec.add(vec.add(u, vec.scl(nn, Math.max(0, 0.7 - vec.dot(u, nn)) * 1.4)), vec.scl(toStar, 0.3)));
+      this.arrivalPoint = vec.add(bp, vec.scl(u, near.dist));
+    }
     this.ship.frame = -1; this.ship.rot = false;
-    this.ship.p = vec.scl(dir, -(D + decelDistance));
+    this.ship.p = vec.sub(this.arrivalPoint, vec.scl(dir, decelDistance));
     this.ship.q = this.qLookDir(dir);
     this.camQ = this.ship.q.slice();
   }
@@ -344,6 +358,15 @@ export class Game {
       }), 3000);
     }
     if (!st.scoopable) setTimeout(() => this.hud.note('This star cannot be scooped. Gas giants can be skimmed for fuel.', 'warn', 9), 4000);
+    // a body picked from the map search, or the reason a system is worth the trip
+    const want = (this.pendingBody && this.pendingBody.starId === st.id && this.pendingBody.name) || this.universe.special.get(st.id)?.arrivalTarget;
+    this.pendingBody = null;
+    const wb = want && sys.bodies.find((b) => b.name === want);
+    if (wb) {
+      this.setTarget({ kind: 'body', index: wb.index });
+      this.faceTarget = 9;
+      setTimeout(() => this.hud.note(`${wb.name} targeted.${wb.landmark ? ` ${wb.landmark}` : ''} Press P to fly there.`, 'good', 14), 5200);
+    }
     this.checkMessages(true);
     this.saveGame();
   }
@@ -379,16 +402,19 @@ export class Game {
   }
 
   // A* through the star field: hops no longer than the drive limit, preferring stars
-  // that can be scooped so the tank can be refilled along the way.
+  // that can be scooped so the tank can be refilled along the way. The heuristic is
+  // weighted so routes hundreds of light-years long are found in milliseconds, at the
+  // price of the odd extra jump.
   planRoute(dest) {
     const g = this.universe.galaxy;
     const start = this.star;
     const hop = MAX_JUMP * 0.98;
     const key = (s) => s.id;
-    const open = new Map([[key(start), { s: start, g: 0, f: distLy(start.pos, dest.pos), prev: null }]]);
+    const h = (s) => { const d = distLy(s.pos, dest.pos); return 1.5 * (d + 3 * Math.ceil(d / hop)); };
+    const open = new Map([[key(start), { s: start, g: 0, f: h(start), prev: null }]]);
     const closed = new Map();
     let iter = 0;
-    while (open.size && iter++ < 4000) {
+    while (open.size && iter++ < 20000) {
       let cur = null;
       for (const n of open.values()) if (!cur || n.f < cur.f) cur = n;
       open.delete(key(cur.s));
@@ -403,7 +429,7 @@ export class Game {
         if (!nb.scoopable && nb.id !== dest.id) continue;
         const cost = cur.g + d + 3; // a small cost per jump favours fewer, longer hops
         const ex = open.get(key(nb));
-        if (!ex || cost < ex.g) open.set(key(nb), { s: nb, g: cost, f: cost + distLy(nb.pos, dest.pos), prev: cur });
+        if (!ex || cost < ex.g) open.set(key(nb), { s: nb, g: cost, f: cost + h(nb), prev: cur });
       }
     }
     return null;
@@ -556,6 +582,7 @@ export class Game {
     if (any(['KeyK'])) this.panels.toggleJournal();
     if (any(['KeyH', 'F1'])) this.panels.toggleHelp();
     if (any(['Backquote', 'F2'])) this.panels.toggleCheats();
+    if (any(['Slash'])) this.maps.openSearch();
     if (any(['Enter']) && this.panels.transOpen) this.panels.closeTransmission();
     if (!i.enabled) return;
     if (i.hit('KeyC')) { this.camMode = this.camMode === 'chase' ? 'cockpit' : 'chase'; this.audio.blip(); }
@@ -1505,7 +1532,7 @@ export class Game {
     else if (ship.mode === 'cruise') hint = this.target ? 'P  AUTOPILOT   ·   TAB  DROP TO FLIGHT   ·   W S  THROTTLE' : 'T  TARGET AHEAD   ·   N  SYSTEM MAP   ·   TAB  DROP TO FLIGHT';
     else if (ship.mode === 'flight') {
       if (ship.alt < 3000 && ship.frame >= 0 && this.sys.bodies[ship.frame].solid) hint = ship.gearDown ? 'F  DESCEND   ·   R  CLIMB   ·   X  HOLD   ·   SET DOWN SLOWLY' : 'G  LANDING GEAR   ·   F  DESCEND   ·   R  CLIMB';
-      else hint = this.target ? 'P  AUTOPILOT   ·   TAB  CRUISE   ·   SPACE  SCAN   ·   M  GALAXY MAP   ·   H  HELP' : 'TAB  CRUISE   ·   T  TARGET   ·   SPACE  SCAN   ·   M  GALAXY MAP   ·   H  HELP';
+      else hint = this.target ? 'P  AUTOPILOT   ·   TAB  CRUISE   ·   SPACE  SCAN   ·   M  MAP   ·   /  SEARCH   ·   H  HELP' : 'TAB  CRUISE   ·   T  TARGET   ·   SPACE  SCAN   ·   M  MAP   ·   /  SEARCH   ·   H  HELP';
     }
     if (!this.input.locked && this.state === 'play' && !this.maps.open && !this.panels.modalOpen) hint = 'CLICK TO TAKE THE CONTROLS   ·   H  HELP';
     let centerText = null, centerSub = null, centerColor = null;

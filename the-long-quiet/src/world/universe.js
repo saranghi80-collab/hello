@@ -2,7 +2,7 @@
 // and the route of beacons Surveyor Ilse Marrow left behind.
 
 import { Galaxy, SOL_POS, distLy } from './galaxy.js';
-import { generateSystem, qAxis } from './system.js';
+import { generateSystem, qAxis, qRotate } from './system.js';
 import { Rng, hash32 } from '../core/rng.js';
 import { AU, R_EARTH, M_EARTH, R_JUP, M_JUP, G } from '../core/units.js';
 import { hexToLinear } from '../core/color.js';
@@ -90,6 +90,39 @@ export class Universe {
       this.erebus = e;
       this.special.set(e.id, { build: buildErebus, noRandomSignals: true });
     }
+
+    // J1407: a young orange star 434 ly away toward Centaurus (galactic l 318.5, b +20.8).
+    // In 2007 something passed in front of it and dimmed it for 56 days: J1407b, a giant
+    // planet or brown dwarf wrapped in rings 180 million km across. Placed where it really is.
+    const jPos = [SOL_POS[0] + 268.69, SOL_POS[1] + 154.01, SOL_POS[2] - 304.04];
+    let jc = [];
+    for (let rad = 6; !jc.length && rad < 60; rad *= 1.6) {
+      jc = g.starsInRadius(jPos, rad).filter((c) => c.star.kind === 'main' || c.star.kind === 'brown').sort((a, b) => a.d - b.d);
+    }
+    if (jc.length) {
+      const j = g.forceStar(jc[0].star.id, { classDef: g.classDef('K'), u: 0.47, name: 'J1407', mass: 0.9, temp: 4400, radius: 0.96, spectral: 'K5 IVe' });
+      this.j1407 = j;
+      // the drive brings you in on the sunlit face of the rings, 2.2 AU out, rather than
+      // beside the star where its glare would drown them
+      this.special.set(j.id, { build: buildJ1407, noRandomSignals: true, arrivalTarget: 'J1407b', arriveNear: { body: 'J1407b', dist: 2.2 * AU } });
+    }
+
+    // Places worth finding by name, for the map search.
+    this.landmarks = [
+      { name: 'Sol', star: g.sol, aliases: ['home', 'sun', 'solar system'] },
+      ...['Mercury', 'Venus', 'Earth', 'Moon', 'Mars', 'Jupiter', 'Io', 'Europa', 'Ganymede', 'Callisto', 'Saturn', 'Titan', 'Uranus', 'Neptune', 'Triton']
+        .map((b) => ({ name: b, star: g.sol, body: b, aliases: b === 'Earth' ? ['home'] : b === 'Saturn' ? ['rings'] : [] })),
+      { name: 'Vesper', star: start, aliases: ['start'] },
+    ];
+    if (this.erebus) {
+      this.landmarks.push({ name: 'Erebus', star: this.erebus, aliases: ['black hole', 'blackhole', 'bh'] });
+      this.landmarks.push({ name: 'Erebus b', star: this.erebus, body: 'Erebus b', aliases: [] });
+    }
+    if (this.j1407) {
+      this.landmarks.push({ name: 'J1407', star: this.j1407, aliases: ['1swasp j1407', 'centaurus'] });
+      this.landmarks.push({ name: 'J1407b', star: this.j1407, body: 'J1407b', priority: 1, aliases: ['super saturn', 'super-saturn', 'giant rings', 'big rings', 'rings', 'ringed planet', 'j1407 b'] });
+      this.landmarks.push({ name: 'J1407b I', star: this.j1407, body: 'J1407b I', aliases: ['exomoon', 'ring gap moon'] });
+    }
   }
 
   trailIndex(starId) {
@@ -107,6 +140,12 @@ export class Universe {
   }
 }
 
+function qFromTo(a, b) {
+  const c = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const q = [c[0], c[1], c[2], 1 + dot(a, b)];
+  const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+  return [q[0] / l, q[1] / l, q[2] / l, q[3] / l];
+}
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
 function scale(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
@@ -227,6 +266,31 @@ function buildSol(sys, rr, h) {
   const nep = gas(true, 0.352, 0.054, 30.07, 'Neptune', ['#3f6fc4', '#5a86d4', '#2d58a8', '#7ea2e0']);
   addMoon(sys, h, rr, nep, h.makeSolid(sys, rr, 'ice', 1.3534e6, 0.0036 * M_EARTH, 38), 3.548e8, 'Triton');
   sys.home = true;
+}
+
+function buildJ1407(sys, rr, h) {
+  // J1407b: about 20 Jupiter masses and only 16 million years old, so it still glows a
+  // little with the heat of its own formation. Its ring system reaches 0.6 AU, 90 million
+  // km, some 200 times the span of Saturn's, with dozens of rings and a broad clear gap at
+  // 0.4 AU that a moon may have swept out.
+  const giant = addPlanet(sys, h, rr, h.makeGas(rr, false, R_JUP * 1.4, M_JUP * 20, 1100), 5.0, 'J1407b');
+  giant.gas.palette = ['#6e3a24', '#a2633e', '#4a2618', '#bd8259', '#2b150d'].map(hexToLinear);
+  giant.gas.glow = 0.16;
+  giant.gas.bands = 14;
+  // tilt the rings steeply, leaning toward the star so it lights their face from about 50
+  // degrees for the first few years you are likely to spend here (the year is 12 long)
+  const o = giant.orbit;
+  const th = o.phase0 + (2 * Math.PI * 3e6) / o.period;
+  const toStar = qRotate(o.q, [-Math.cos(th), 0, -Math.sin(th)]);
+  const orbitN = qRotate(o.q, [0, 1, 0]);
+  const beta = 0.87;
+  const n = norm(add(scale(orbitN, Math.cos(beta)), scale(toStar, Math.sin(beta))));
+  giant.spin.tiltAngle = beta;
+  giant.spin.tilt = qFromTo([0, 1, 0], n);
+  giant.rings = { inner: 3.2e9, outer: 9.0e10, seed: 1407, color: hexToLinear('#c39a74'), opacity: 1, style: 'super', gapAt: 6.0e10, gapWidth: 5.0e9 };
+  giant.landmark = 'Its rings span 180 million km, 200 times the width of Saturn\'s. Seen from Earth they eclipsed the star for 56 days in 2007.';
+  const moon = addMoon(sys, h, rr, giant, h.makeSolid(sys, rr, 'ice', 4.4e6, 0.45 * M_EARTH, 80), 6.0e10, 'J1407b I');
+  moon.orbit.q = giant.spin.tilt.slice(); // in the ring plane, keeping the great gap clear
 }
 
 function buildErebus(sys, rr, h) {

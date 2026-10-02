@@ -101,6 +101,16 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 #map header .tabs { display: flex; gap: 20px; }
 [role="tab"] { appearance: none; background: none; border: 0; cursor: pointer; padding: 6px 0; font: 500 11px/1 var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid transparent; }
 [role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+#map header .search { position: relative; flex: 0 1 360px; min-width: 0; }
+#map-search { width: 100%; background: rgba(0,0,0,0.35); color: var(--ink); border: 1px solid var(--ink-faint); padding: 7px 10px; font: 400 12px/1.2 var(--mono); letter-spacing: 0.04em; }
+#map-search::placeholder { color: var(--ink-dim); }
+#map-search:focus { outline: 1px solid var(--sea); outline-offset: 0; }
+#map-search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; list-style: none; margin: 0; padding: 4px 0; background: rgba(8,9,11,0.97); border: 1px solid var(--ink-faint); max-height: 60vh; overflow: auto; }
+#map-search-results li { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 7px 10px; cursor: pointer; font-size: 12px; }
+#map-search-results li span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#map-search-results li .dim { white-space: nowrap; font-size: 11px; }
+#map-search-results li[aria-selected="true"], #map-search-results li:hover { background: rgba(232,228,218,0.08); }
+#map-search-results li.none { cursor: default; color: var(--ink-dim); }
 #map-canvas { width: 100%; height: 100%; display: block; cursor: crosshair; min-width: 0; }
 #map-info { border-left: 1px solid var(--ink-faint); padding: 18px 20px; overflow: auto; min-width: 0; }
 #map-info h3 { margin: 4px 0; font: 400 24px/1.15 var(--serif); }
@@ -238,6 +248,10 @@ input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
       <button role="tab" data-maptab="galaxy" aria-selected="true">Galaxy · M</button>
       <button role="tab" data-maptab="system" aria-selected="false">System · N</button>
     </div>
+    <div class="search">
+      <input id="map-search" type="search" placeholder="Search stars and planets   /" autocomplete="off" spellcheck="false" aria-label="Search stars and planets" aria-controls="map-search-results">
+      <ul id="map-search-results" role="listbox" hidden></ul>
+    </div>
     <span style="flex:1"></span>
     <button class="link" id="map-close">Close · Esc</button>
   </header>
@@ -296,6 +310,7 @@ input[type="checkbox"] { accent-color: var(--sea); width: 16px; height: 16px; }
       <div><span>Floodlight</span><span><kbd>L</kbd></span></div>
       <div><span>Jump to plotted star</span><span><kbd>J</kbd></span></div>
       <div><span>Galaxy map</span><span><kbd>M</kbd></span></div>
+      <div><span>Search stars and planets</span><span><kbd>/</kbd></span></div>
       <div><span>System map</span><span><kbd>N</kbd></span></div>
       <div><span>Journal</span><span><kbd>K</kbd></span></div>
       <div><span>Camera</span><span><kbd>C</kbd> · wheel zoom · right-drag look</span></div>

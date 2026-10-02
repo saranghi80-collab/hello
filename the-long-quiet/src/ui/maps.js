@@ -7,6 +7,9 @@ import { AU, fmtDistance } from '../core/units.js';
 
 const INK = 'rgba(232,228,218,';
 
+const fmtLy = (d) => (d < 10 ? `${d.toFixed(2)} ly` : d < 1000 ? `${d.toFixed(1)} ly` : `${Math.round(d).toLocaleString('en-US')} ly`);
+const escapeHtml = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
 function rgbStr(c, a = 1, boost = 1) {
   const s = (v) => Math.round(Math.min(1, Math.pow(Math.max(v * boost, 0), 1 / 2.2)) * 255);
   return `rgba(${s(c[0])},${s(c[1])},${s(c[2])},${a})`;
@@ -55,11 +58,134 @@ export class Maps {
     });
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      if (this.tab === 'galaxy') this.zoom = Math.max(8, Math.min(70, this.zoom * (e.deltaY > 0 ? 1.12 : 0.89)));
+      if (this.tab === 'galaxy') this.zoom = Math.max(8, Math.min(700, this.zoom * (e.deltaY > 0 ? 1.12 : 0.89)));
       else this.sysZoom = Math.max(0.4, Math.min(8, this.sysZoom * (e.deltaY > 0 ? 0.89 : 1.12)));
     }, { passive: false });
     this.sysPan = { x: 0, y: 0 };
     this.sysZoom = 1;
+    // search
+    this.search = document.getElementById('map-search');
+    this.results = document.getElementById('map-search-results');
+    this.hits = [];
+    this.hitSel = 0;
+    this.search.addEventListener('input', () => this.runSearch());
+    this.search.addEventListener('focus', () => this.runSearch());
+    this.search.addEventListener('blur', () => setTimeout(() => { this.results.hidden = true; }, 120));
+    this.search.addEventListener('keydown', (e) => this.searchKey(e));
+  }
+
+  // ---------- search ----------
+  openSearch() {
+    if (!this.open) this.toggle(true);
+    setTimeout(() => { this.search.focus(); this.search.select(); }, 0);
+  }
+
+  searchKey(e) {
+    e.stopPropagation();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!this.hits.length) return;
+      this.hitSel = (this.hitSel + (e.key === 'ArrowDown' ? 1 : -1) + this.hits.length) % this.hits.length;
+      this.renderHits();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (this.hits[this.hitSel]) this.pick(this.hits[this.hitSel]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (this.search.value) { this.search.value = ''; this.runSearch(); } else this.search.blur();
+    }
+  }
+
+  runSearch() {
+    const q = this.search.value.trim().toLowerCase().replace(/\s+/g, ' ');
+    this.hits = q ? this.findMatches(q).slice(0, 9) : [];
+    this.hitSel = 0;
+    this.renderHits(q);
+  }
+
+  findMatches(q) {
+    const g = this.game;
+    const here = g.star.pos;
+    const out = new Map();
+    const score = (name, aliases = []) => {
+      const n = name.toLowerCase();
+      if (n === q) return 0;
+      if (n.startsWith(q)) return 1;
+      if (aliases.includes(q)) return 1.5;
+      if (n.includes(q)) return 2;
+      if (aliases.some((a) => a.includes(q))) return 2.5;
+      return null;
+    };
+    const add = (key, hit, sc) => {
+      if (sc === null) return;
+      const ex = out.get(key);
+      if (!ex || sc < ex.score) out.set(key, { ...hit, score: sc });
+    };
+    const bodyHit = (b, sc) => add(`b:${b.index}`, { kind: 'body', index: b.index, name: b.name, sub: `${TYPE_LABEL[b.type]} · this system`, dist: 0 }, sc);
+    if (g.scanned) for (const b of g.sys.bodies) bodyHit(b, score(b.name));
+    for (const lm of g.universe.landmarks || []) {
+      const st = lm.star;
+      const d = distLy(st.pos, here);
+      const raw = score(lm.name, lm.aliases);
+      const sc = raw === null ? null : raw - (lm.priority || 0) * 0.6;
+      if (lm.body) {
+        if (st.id === g.star.id) { const b = g.sys.bodies.find((x) => x.name === lm.body); if (b) bodyHit(b, sc); }
+        else add(`lb:${lm.name}`, { kind: 'remote', star: st, body: lm.body, name: lm.name, sub: `in ${st.name} · ${fmtLy(d)}`, dist: d }, sc);
+      } else add(`s:${st.id}`, { kind: 'star', star: st, name: st.name, sub: `${st.spectral} · ${st.id === g.star.id ? 'you are here' : fmtLy(d)}`, dist: d }, sc);
+    }
+    const pool = new Map(this.stars.map((s) => [s.id, s]));
+    for (const id of g.visited) { const s = g.universe.galaxy.starById(id); if (s) pool.set(s.id, s); }
+    for (const k of g.trailKnown()) pool.set(k.star.id, k.star);
+    for (const s of pool.values()) {
+      const d = distLy(s.pos, here);
+      add(`s:${s.id}`, { kind: 'star', star: s, name: s.name, sub: `${s.spectral} · ${s.id === g.star.id ? 'you are here' : fmtLy(d)}`, dist: d },
+        score(s.name, s.kind === 'blackhole' ? ['black hole'] : s.kind === 'neutron' ? ['neutron star', 'pulsar'] : []));
+    }
+    return [...out.values()].sort((a, b) => a.score - b.score || a.dist - b.dist);
+  }
+
+  renderHits(q) {
+    const el = this.results;
+    if (!this.search.value.trim()) { el.hidden = true; return; }
+    el.hidden = false;
+    if (!this.hits.length) {
+      el.innerHTML = `<li class="none">Nothing called "${escapeHtml(q || this.search.value)}" within reach of the charts</li>`;
+      return;
+    }
+    el.innerHTML = this.hits.map((h, i) => `<li role="option" data-i="${i}" aria-selected="${i === this.hitSel}"><span>${escapeHtml(h.name)}</span><span class="dim">${escapeHtml(h.sub)}</span></li>`).join('');
+    el.querySelectorAll('li[data-i]').forEach((li) => li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      this.pick(this.hits[Number(li.dataset.i)]);
+    }));
+  }
+
+  pick(hit) {
+    const g = this.game;
+    this.search.value = '';
+    this.results.hidden = true;
+    this.search.blur();
+    if (hit.kind === 'body') {
+      g.setTarget({ kind: 'body', index: hit.index });
+      g.audio.select();
+      this.setTab('system');
+      g.hud.note(`Target: ${hit.name}. Close the map and press P to fly there.`, 'info', 6);
+      return;
+    }
+    const st = hit.star;
+    g.pendingBody = hit.kind === 'remote' ? { starId: st.id, name: hit.body } : null;
+    if (st.id === g.star.id) { this.setTab('galaxy'); return; }
+    this.selectStar(st);
+  }
+
+  selectStar(s) {
+    const g = this.game;
+    this.selected = s;
+    const d = distLy(s.pos, g.star.pos);
+    if (d <= g.maxJump()) g.setJumpTarget(s);
+    // pull the view back far enough to show it
+    if (d > this.zoom * 1.2) this.zoom = Math.min(700, d * 0.9);
+    g.audio.select();
+    this.setTab('galaxy');
   }
 
   toggle(force, tab) {
@@ -131,8 +257,9 @@ export class Maps {
     const here = g.star.pos;
     // plane rings
     c.lineWidth = 1;
-    for (let r = 10; r <= 50; r += 10) {
-      c.strokeStyle = INK + (r === 50 ? 0.06 : 0.09) + ')';
+    const step = this.zoom > 90 ? 100 : 10;
+    for (let r = step; r <= step * 5; r += step) {
+      c.strokeStyle = INK + (r === step * 5 ? 0.06 : 0.09) + ')';
       c.beginPath();
       for (let i = 0; i <= 96; i++) {
         const a = (i / 96) * Math.PI * 2;
@@ -161,6 +288,8 @@ export class Maps {
     }
     // direction to Sol and the galactic core
     this.edgeMarker(c, SOL_POS, 'SOL', 'rgba(232,210,150,0.8)');
+    const jx = g.universe.j1407;
+    if (jx && jx.id !== g.star.id && jx !== this.selected) this.edgeMarker(c, jx.pos, 'J1407 · GIANT RINGS', 'rgba(226,182,140,0.8)');
     this.edgeMarker(c, [0, 0, 0], 'GALACTIC CORE', INK + '0.35)', true);
 
     // stars, far to near
@@ -315,7 +444,8 @@ export class Maps {
         const s = this.hover.s;
         if (s.id === this.game.star.id) return;
         this.selected = s;
-        if (distLy(s.pos, this.game.star.pos) <= 15) this.game.setJumpTarget(s);
+        this.game.pendingBody = null;
+        if (distLy(s.pos, this.game.star.pos) <= this.game.maxJump()) this.game.setJumpTarget(s);
         this.game.audio.select();
         this.renderInfo();
       }

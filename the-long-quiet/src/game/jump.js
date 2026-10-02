@@ -112,8 +112,8 @@ export class JumpDrive {
       if (this.t >= this.Tt && !g.engine.sky.pending) { this.phase = 'decel'; this.t = 0; }
     } else if (this.phase === 'decel') {
       const rem = this.remaining(Math.min(this.t, this.Td));
-      const D = g.arrivalDistance;
-      ship.p = [-this.dir[0] * (D + rem), -this.dir[1] * (D + rem), -this.dir[2] * (D + rem)];
+      const A = g.arrivalPoint;
+      ship.p = [A[0] - this.dir[0] * rem, A[1] - this.dir[1] * rem, A[2] - this.dir[2] * rem];
       ship.q = g.qLookDir(this.dir);
       jumpLevel = 1 - this.t / this.Td;
       this.advanceClocks(dt, 0.03);

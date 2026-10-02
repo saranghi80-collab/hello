@@ -16,6 +16,7 @@ A lonely, full-scale space exploration game for the browser. You are Surveyor El
 - **Ilse Marrow's beacons.** Surveyor Seven went out decades before you and left a trail of beacons. You can follow them to the end of her route, or ignore them.
 - **What happens if you fly into things.** Air has real density, so drag and entry heating follow your speed: come in fast and a plasma sheath wraps the hull, too fast and you burn up. Gas giants have no surface; below the cloud tops it gets dark, hot and crushing, with lightning in the murk, until the hull gives way somewhere past 100 bar. Hitting the ground at speed releases the energy it should, and flying into a star ends the way you would expect.
 - **Erebus, a black hole you can reach.** A 60,000 solar mass hole about 13 ly from the start, with a ray-traced accretion disk, gravitational lensing, Doppler beaming and a photon ring. Near it the tides pull, your clock runs slow against home, and no drive can hold you inside three Schwarzschild radii. You can cross the horizon if you want to.
+- **J1407b, the super-Saturn.** The real J1407 system, placed where it actually is, 434 light-years away toward Centaurus. Its planet is about 20 times the mass of Jupiter and still glows faintly with the heat of its formation. Its rings reach 90 million km (0.6 AU), roughly 200 times the span of Saturn's, with dozens of separate rings and a broad gap where a moon orbits. When the rings passed in front of the star in 2007, they dimmed it for 56 days.
 - **Things left behind.** Derelict probes, wrecks, and very occasionally a structure no human built.
 - **Generative sound.** A slow ambient score, ship hum, wind on worlds that have air. All of it is synthesised in the browser.
 
@@ -35,6 +36,7 @@ Progress saves automatically in the browser (localStorage).
 | Landing gear / floodlight | G / L |
 | Jump to plotted star | J |
 | Galaxy map / system map / journal | M / N / K |
+| Search stars and planets | / |
 | Camera | C, mouse wheel to zoom, right-drag to look around |
 | Time compression (landed) | , and . |
 | Help / pause | H / Esc |
@@ -47,6 +49,10 @@ Cruise drive speed scales with your distance to the nearest surface. Point at a 
 Watch your speed in air: the cruise governor keeps you to a survivable entry, but flight mode will let you dive as hard as you like.
 
 To refuel, skim close to a star or through a gas giant's upper atmosphere, and keep an eye on your heat. The drive is limited to 15 ly per jump; the galaxy map can plot a route through stars you can refuel at.
+
+### Searching
+
+Press **/**, or click the search box at the top of the map, and type a name: a star, a planet in the current system, or a known place such as Sol, Earth, Erebus or J1407b (also found as "rings" or "super saturn"). Arrow keys and Enter pick a result. Picking a star selects it as the jump target, or offers a route if it is out of range. Picking a planet in another system does the same, then targets that planet when you arrive. Long routes are fine: J1407 is about 36 jumps away, or one with the jump-anywhere cheat.
 
 ### Cheats
 

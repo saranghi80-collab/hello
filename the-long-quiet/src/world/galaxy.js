@@ -67,9 +67,10 @@ function makeStar(id, pos, seed, forced) {
   const c = forced?.classDef || r.weighted(CLASSES);
   const u = forced?.u ?? r.next();
   const lerp = (a) => a[0] + (a[1] - a[0]) * u;
-  const temp = c.kind === 'blackhole' ? 0 : lerp(c.T) * (0.97 + 0.06 * r.next());
+  const jitter = 0.97 + 0.06 * r.next();
+  const temp = c.kind === 'blackhole' ? 0 : forced?.temp ?? lerp(c.T) * jitter;
   const mass = forced?.mass ?? c.M[0] * Math.pow(c.M[1] / c.M[0], u);
-  let radius = lerp(c.R);
+  let radius = forced?.radius ?? lerp(c.R);
   if (c.kind === 'blackhole') radius = (2 * 6.674e-11 * mass * 1.989e30 / (299792458 ** 2)) / 6.957e8;
   const lum = c.kind === 'blackhole' ? 0 : radius * radius * Math.pow(temp / 5772, 4);
   const sub = c.kind === 'blackhole' || c.kind === 'neutron' ? 0 : Math.min(9, Math.floor(10 * (1 - u)));
@@ -86,6 +87,7 @@ function makeStar(id, pos, seed, forced) {
   // most black holes are nearly dark; a thin disk of infalling gas gives a little light
   const diskLum = c.kind === 'blackhole' ? (forced?.diskLum ?? 0.002 + 0.02 * new Rng(seed ^ 0x77).next()) : 0;
   if (c.kind === 'blackhole' && forced?.mass) spectral = `Black hole · ${Math.round(mass).toLocaleString('en-US')} solar masses`;
+  if (forced?.spectral) spectral = forced.spectral;
   return {
     id, name, pos, seed,
     cls: c.cls, kind: c.kind, spectral,

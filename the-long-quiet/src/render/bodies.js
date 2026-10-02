@@ -180,7 +180,84 @@ export class StarRenderer {
 }
 
 // ---------------------------------------------------------------- rings
+// A ring system like J1407b's: dozens of distinct rings with sharp edges and clear gaps,
+// thinning toward the outside, and one broad gap swept clean by a moon.
+function superRingTexture(rings) {
+  const n = 4096;
+  const data = new Uint8Array(n * 4);
+  const r = new Rng(rings.seed);
+  const span = rings.outer - rings.inner;
+  const gx = rings.gapAt ? (rings.gapAt - rings.inner) / span : -1;
+  const gw = rings.gapAt ? (rings.gapWidth || span * 0.05) / span / 2 : 0;
+  // ring boundaries: 40-odd rings of varied width
+  const edges = [0];
+  while (edges[edges.length - 1] < 1) edges.push(edges[edges.length - 1] + r.logRange(0.006, 0.05));
+  const levels = edges.map(() => (r.chance(0.18) ? r.range(0.02, 0.12) : r.range(0.35, 1)));
+  const tints = edges.map(() => r.range(0.72, 1));
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1);
+    while (k < edges.length - 2 && x > edges[k + 1]) k++;
+    // soften each edge over a texel or two, so rings stay crisp without aliasing
+    const e0 = edges[k], e1 = edges[k + 1];
+    const soft = 1.5 / n;
+    const inRing = Math.min(1, (x - e0) / soft, (e1 - x) / soft);
+    const fine = 0.85 + 0.15 * Math.sin(x * 900 + k * 1.7) * Math.sin(x * 2300 + k);
+    let d = levels[k] * (0.6 + 0.4 * Math.max(0, inRing)) * fine;
+    // thinner and dustier toward the outer edge, a ragged inner edge
+    d *= 1 - 0.55 * Math.pow(x, 1.6);
+    d *= Math.min(1, x / 0.03);
+    d *= Math.min(1, (1 - x) / 0.01);
+    if (gw > 0) d *= Math.min(1, Math.max(0, (Math.abs(x - gx) - gw) / (gw * 0.15)));
+    data[i * 4] = Math.round(Math.max(0, Math.min(1, d)) * 255);
+    data[i * 4 + 1] = Math.round(tints[k] * 255);
+    data[i * 4 + 2] = 0;
+    data[i * 4 + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, n, 1, THREE.RGBAFormat);
+  // mipmapped: dozens of rings squeezed into a few hundred pixels would otherwise shimmer
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// Rings many times wider than their planet get logarithmically spaced vertices, so the
+// triangles near the planet stay small while the outer edge still reaches 90 million km.
+function ringGeometry(inner, outer) {
+  const ratio = outer / inner;
+  if (ratio < 6) {
+    const g = new THREE.RingGeometry(inner, outer, 256, 4);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }
+  const segs = 720;
+  const nr = Math.min(200, Math.ceil(Math.log(ratio) * 28));
+  const pos = new Float32Array((nr + 1) * (segs + 1) * 3);
+  const idx = [];
+  let o = 0;
+  for (let j = 0; j <= nr; j++) {
+    const rad = inner * Math.pow(ratio, j / nr);
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      pos[o++] = Math.cos(a) * rad; pos[o++] = 0; pos[o++] = -Math.sin(a) * rad;
+    }
+  }
+  for (let j = 0; j < nr; j++) {
+    for (let i = 0; i < segs; i++) {
+      const a = j * (segs + 1) + i, b = a + segs + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
+}
+
 function ringTexture(rings) {
+  if (rings.style === 'super') return superRingTexture(rings);
   const n = 1024;
   const data = new Uint8Array(n * 4);
   const r = new Rng(rings.seed);
@@ -221,7 +298,7 @@ void main() { vObj = position; vec4 wp = modelMatrix * vec4(position, 1.0); vW =
 #include <logdepthbuf_vertex>
 }`;
 const RING_FRAG = `${LOGF}
-uniform vec3 uColor; uniform vec3 uSunColor; uniform vec3 uSunLocal; uniform vec3 uCamLocal; uniform float uR;
+uniform vec3 uColor; uniform vec3 uSunColor; uniform vec3 uSunLocal; uniform vec3 uCamLocal; uniform float uR; uniform float uDusty;
 varying vec3 vObj; varying vec3 vW;
 ${RING_GLSL}
 void main() {
@@ -239,6 +316,24 @@ void main() {
   vec3 v = normalize(uCamLocal - p);
   float sunSide = sign(s.y), viewSide = sign(v.y);
   float mu = abs(v.y);
+  if (uDusty > 0.5) {
+    // dusty rings: single scattering in a slab of optical depth tau. The sunlit face
+    // reflects; seen from the dark side, thin rings glow with light filtering through,
+    // strongly so when you look back toward the star.
+    float tau = d * 2.2;
+    float mu0 = max(abs(s.y), 0.03);
+    float muv = max(mu, 0.03);
+    float cosT = -dot(v, s);
+    float g1 = 0.55;
+    float P = 0.45 + 0.55 * (1.0 - g1 * g1) / pow(1.0 + g1 * g1 - 2.0 * g1 * cosT, 1.5);
+    float Tv = exp(-tau / muv);
+    float I;
+    if (sunSide == viewSide) I = mu0 / (mu0 + muv) * (1.0 - exp(-tau * (1.0 / mu0 + 1.0 / muv)));
+    else if (abs(mu0 - muv) < 1e-3) I = tau / mu0 * exp(-tau / mu0);
+    else I = mu0 / (mu0 - muv) * (exp(-tau / mu0) - Tv);
+    gl_FragColor = vec4(uColor * tex.g * uSunColor * (P * I * 0.6 * sh), Tv);
+    return;
+  }
   float alpha = 1.0 - exp(-d * 2.2 / max(mu, 0.03));
   float lit = sunSide == viewSide ? 1.0 : 0.35 * (1.0 - d);
   float fwd = pow(max(dot(-v, s), 0.0), 8.0) * 2.5 * (1.0 - d);
@@ -252,8 +347,7 @@ class Rings {
     const rings = body.rings;
     this.body = body;
     this.tex = ringTexture(rings);
-    const g = new THREE.RingGeometry(rings.inner, rings.outer, 256, 4);
-    g.rotateX(-Math.PI / 2);
+    const g = ringGeometry(rings.inner, rings.outer);
     this.mat = new THREE.ShaderMaterial({
       vertexShader: RING_VERT, fragmentShader: RING_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide,
       blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor,
@@ -261,6 +355,7 @@ class Rings {
         tRing: { value: this.tex }, uInner: { value: rings.inner / body.radius }, uOuter: { value: rings.outer / body.radius },
         uOpacity: { value: rings.opacity }, uColor: { value: new THREE.Vector3(...rings.color) }, uSunColor: { value: new THREE.Vector3() },
         uSunLocal: { value: new THREE.Vector3() }, uCamLocal: { value: new THREE.Vector3() }, uR: { value: body.radius },
+        uDusty: { value: rings.style === 'super' ? 1 : 0 },
       },
     });
     this.mesh = new THREE.Mesh(g, this.mat);
@@ -370,7 +465,9 @@ void main() {
   }
   vec3 E = uSunColor * diff * sh * limb + uFillColor * max(dot(N, uFillDir), 0.0);
   vec3 outc = col / 3.14159 * E;
-  outc += vec3(1.0, 0.3, 0.1) * uGlow * (0.4 + 0.6 * fine) * 0.08;
+  // heat from inside: the darker belts are deeper and hotter, and glow more
+  float belt = 1.0 - clamp(dot(col, vec3(0.3, 0.55, 0.15)) * 2.0, 0.0, 1.0);
+  outc += vec3(1.0, 0.3, 0.1) * uGlow * (0.45 + 0.4 * belt + 0.15 * turb) * pow(mu, 0.3) * 0.08;
   gl_FragColor = vec4(outc, 1.0);
 }`;
 
@@ -867,6 +964,17 @@ export class PlanetRenderer {
       const t = b.spin.locked ? b.orbit.q : b.spin.tilt;
       this.ringFrame.quaternion.set(t[0], t[1], t[2], t[3]);
     }
+    if (this.rings && this.inertial.visible) {
+      // rings far wider than their planet stay lit even when the planet is under a pixel
+      const ru = this.rings.mat.uniforms;
+      const t = b.spin.locked ? b.orbit.q : b.spin.tilt;
+      const tc = qConj(t);
+      const sl = qRotate(tc, light.sunDir);
+      const cl = qRotate(tc, [-rel[0] / b.radius, -rel[1] / b.radius, -rel[2] / b.radius]);
+      ru.uSunLocal.value.set(sl[0], sl[1], sl[2]);
+      ru.uCamLocal.value.set(cl[0], cl[1], cl[2]);
+      ru.uSunColor.value.set(light.sun[0], light.sun[1], light.sun[2]);
+    }
     if (tiny) return true;
     const sunDir = light.sunDir;
     const u = this.material.uniforms;
@@ -958,16 +1066,6 @@ export class PlanetRenderer {
       au.aSunColor.value.set(light.sun[0], light.sun[1], light.sun[2]);
       const inside = dist < b.radius * au.aRa.value * 1.0005;
       this.atmo.mat.side = inside ? THREE.BackSide : THREE.FrontSide;
-    }
-    if (this.rings) {
-      const ru = this.rings.mat.uniforms;
-      const t = b.spin.locked ? b.orbit.q : b.spin.tilt;
-      const tc = qConj(t);
-      const sl = qRotate(tc, sunDir);
-      const cl = qRotate(tc, [-rel[0] / b.radius, -rel[1] / b.radius, -rel[2] / b.radius]);
-      ru.uSunLocal.value.set(sl[0], sl[1], sl[2]);
-      ru.uCamLocal.value.set(cl[0], cl[1], cl[2]);
-      ru.uSunColor.value.set(light.sun[0], light.sun[1], light.sun[2]);
     }
     return false;
   }
